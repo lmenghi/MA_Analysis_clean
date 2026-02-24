@@ -1,0 +1,1784 @@
+---
+title: "Master's Thesis Analysis"
+author: "Lisa"
+format: html
+---
+
+# Preparation
+
+```{r}
+# #install.packages("readr")      # schnelles, robustes Einlesen von csv Dateien
+# #install.packages("readxl")     # Einlesen von xlsx Dateien
+# #install.packages("dplyr")      # Datenmanipulation
+# #install.packages("tidyr")      # Umformen von wide zu long, pivot Funktionen
+# install.packages("stringr")    # robuste String Bearbeitung
+# install.packages("janitor")
+# install.packages("forcats")    # sauberes Faktor Handling
+# install.packages("purrr")      # funktionale Programmierung
+# install.packages("tibble")     # moderne Datenframes mit besserer Ausgabe
+# install.packages("ggplot2")    # Visualisierungen
+# install.packages("lme4")       # lineare gemischte Modelle
+# install.packages("lmerTest")   # p Werte und Tests fuer lmer Modelle
+
+library(readr)      # schnelles, robustes Einlesen von csv Dateien
+library(readxl)     # Einlesen von xlsx Dateien
+library(dplyr)      # Datenmanipulation
+library(tidyr)      # Umformen von wide zu long, pivot Funktionen
+library(stringr)    # robuste String Bearbeitung
+library(janitor)    # saubere Spaltennamen und Datenchecks
+library(forcats)    # sauberes Faktor Handling
+library(purrr)      # funktionale Programmierung
+library(tibble)     # moderne Datenframes mit besserer Ausgabe
+library(ggplot2)    # Visualisierungen
+library(lme4)       # lineare gemischte Modelle
+library(lmerTest)   # p Werte und Tests fuer lmer Modelle
+
+
+valid_id_pattern <- "^sub-\\d+$"
+
+# Helper: robust numeric parsing (Komma oder Punkt)
+parse_num <- function(x) {
+  readr::parse_number(stringr::str_replace(as.character(x), ",", "."))
+}
+
+
+```
+
+Read data Ich importiere jede Datei einzeln, mache die Spalten maschinenlesbar und erzeuge explizit eine Session Variable, damit ich später sauber zwischen Messzeitpunkt und Bedingung unterscheiden kann.
+
+```{r}
+# --------------------------------------------------
+# Read raw data from data_raw folder
+# --------------------------------------------------
+
+food_t1 <- read_csv(
+  "data_raw/FASTRESS_measures-food(session T1).csv",
+  show_col_types = FALSE,
+  col_types = cols(.default = col_character())
+) |>
+  clean_names() |>
+  mutate(session = "T1")
+
+
+food_t2 <- read_csv(
+  "data_raw/FASTRESS_measures-food(session T2).csv",
+   show_col_types = FALSE,
+  col_types = cols(.default = col_character())
+) |>
+  clean_names() |>
+  mutate(session = "T2")
+
+stress_t1 <- read_csv(
+  "data_raw/FASTRESS_measures-stress-mri(session T1).csv",
+ show_col_types = FALSE,
+  col_types = cols(.default = col_character())
+) |>
+  clean_names() |>
+  mutate(session = "T1")
+
+stress_t2 <- read_csv(
+  "data_raw/FASTRESS_measures-stress-mri(session T2).csv",
+  show_col_types = FALSE,
+  col_types = cols(.default = col_character())
+) |>
+  clean_names() |>
+  mutate(session = "T2")
+
+# Quick QC
+food_t1 |> select(fastress_id) |> slice_head(n = 10)
+
+
+```
+
+Leere Zeilen entfernen: Zeilen ohne ID entfernen Erwartung jetzt: n_rows = 17 n_id_na = 0 n_unique_id = 17
+
+macht folgendes in einem Schritt: entfernt NA entfernt leere IDs entfernt Beispielpersonen entfernt alles, was nicht dem echten ID-Format entspricht
+
+```{r}
+
+## --------------------------------------------------
+## Remove non-valid example rows and empty IDs
+## --------------------------------------------------
+
+
+food_t1 <- food_t1 |>
+  mutate(fastress_id = str_to_lower(fastress_id)) |>
+  filter(!is.na(fastress_id),
+         str_detect(fastress_id, valid_id_pattern))
+
+food_t2 <- food_t2 |>
+  mutate(fastress_id = str_to_lower(fastress_id)) |>
+  filter(!is.na(fastress_id),
+         str_detect(fastress_id, valid_id_pattern))
+
+stress_t1 <- stress_t1 |>
+  mutate(fastress_id = str_to_lower(fastress_id)) |>
+  filter(!is.na(fastress_id),
+         str_detect(fastress_id, valid_id_pattern))
+
+stress_t2 <- stress_t2 |>
+  mutate(fastress_id = str_to_lower(fastress_id)) |>
+  filter(!is.na(fastress_id),
+         str_detect(fastress_id, valid_id_pattern))
+
+
+food_t1 |> summarise(
+  n_rows = n(),
+  n_unique_id = n_distinct(fastress_id)
+)
+
+food_t1 |> distinct(fastress_id)
+
+#wenn ich hier nur sub-xxx sehe ist alle korrekt
+
+```
+
+Satz für MA: “Non-valid example entries contained in the raw data files were removed prior to data processing based on the predefined participant ID format.”
+
+## ID Check
+
+-\> prüfen, ob jede Person genau einmal pro Datei vorkommt.
+
+```{r}
+food_t1 |> count(fastress_id) |> filter(n > 1)
+food_t2 |> count(fastress_id) |> filter(n > 1)
+
+stress_t1 |> count(fastress_id) |> filter(n > 1)
+stress_t2 |> count(fastress_id) |> filter(n > 1)
+
+```
+
+Alle Zeilen sind leer -\> Struktur stimmt! Satz für Masterarbeit: "It has been verified that there is exactly one observation per person and session."
+
+## Manipulation check: Stress ratings
+
+stress_all = T1 und T2 untereinander danach checkst man: gibt es Duplikate pro Person pro Session? haben Personen 1 oder 2 Sessions?
+
+```{r}
+# --------------------------------------------------
+# Stress data: build RAW dataset across sessions
+# --------------------------------------------------
+
+stress_all <- bind_rows(stress_t1, stress_t2)
+
+# Quick QC: rows and unique IDs
+stress_all |>
+  summarise(
+    n_rows = n(),
+    n_unique_id = n_distinct(fastress_id),
+    n_sessions = n_distinct(session)
+  )
+
+# Check: one row per person x session (should be empty)
+stress_all |>
+  count(fastress_id, session) |>
+  filter(n > 1)
+
+# Overview: how many sessions per person exist
+stress_all |>
+  distinct(fastress_id, session) |>
+  count(fastress_id) |>
+  count(n)
+
+```
+
+Manipulation check: Goal: show Strong \> Mild (and optionally Strong \> Baseline) Uses complete cases across sessions (participants with T1 and T2), but does NOT split the test by session.
+
+```{r}
+
+# 1) Keep participants with data in BOTH sessions (stable paired sample)
+stress_ids_complete <- stress_all |>
+  distinct(fastress_id, session) |>
+  count(fastress_id, name = "n_sessions") |>
+  filter(n_sessions == 2) |>
+  pull(fastress_id)
+
+stress_all_complete <- stress_all |>
+  filter(fastress_id %in% stress_ids_complete)
+
+# 2) Identify mild and strong stress rating columns (robust pattern, case insensitive)
+
+mild_cols <- names(stress_all_complete) |>
+  stringr::str_subset("(?i)mild")
+
+strong_cols <- names(stress_all_complete) |>
+  stringr::str_subset("(?i)strong")
+
+stress_all_complete <- stress_all_complete |>
+  mutate(
+    across(all_of(c(mild_cols, strong_cols)), parse_num)
+  )
+
+# Safety checks: make sure columns were found
+stopifnot(length(mild_cols) > 0)
+stopifnot(length(strong_cols) > 0)
+
+
+# 4) Compute indices per person x session
+X_mild <- stress_all_complete |>
+  select(all_of(mild_cols)) |>
+  mutate(across(everything(), as.numeric)) |>
+  as.matrix()
+
+X_strong <- stress_all_complete |>
+  select(all_of(strong_cols)) |>
+  mutate(across(everything(), as.numeric)) |>
+  as.matrix()
+
+stress_indices_per_session <- stress_all_complete |>
+  transmute(
+    fastress_id,
+    session,
+    mild_mean   = rowMeans(X_mild, na.rm = TRUE),
+    strong_mean = rowMeans(X_strong, na.rm = TRUE),
+    delta_strong_mild = strong_mean - mild_mean
+  )
+
+# 4) Aggregate to person level (mean across sessions)
+
+stress_person <- stress_indices_per_session |>
+  group_by(fastress_id) |>
+  summarise(
+    mild_mean_person   = mean(mild_mean, na.rm = TRUE),
+    strong_mean_person = mean(strong_mean, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  filter(!is.na(mild_mean_person),
+         !is.na(strong_mean_person))
+
+
+# 7) Save for analysis file
+
+saveRDS(stress_indices_per_session, "data_clean/stress_indices_per_session.rds")
+saveRDS(stress_person, "data_clean/stress_person.rds")
+
+```
+
+Für den Methodenteil: "A manipulation check was conducted to verify the effectiveness of the stress induction. Subjective stress ratings were assessed during baseline, mild, and strong stress conditions. Mean stress ratings were computed across multiple task runs. For the manipulation check, stress ratings during strong stress conditions were compared to mild stress conditions and baseline ratings."
+
+# Data preparation
+
+1.  Food Dateien zusammenführen
+
+```{r}
+# --------------------------------------------------
+# Combine food data across sessions (RAW base)
+# --------------------------------------------------
+
+food_all <- bind_rows(food_t1, food_t2)
+
+# Quick overview: how many sessions per person exist in food data
+food_all |>
+  distinct(fastress_id, session) |>
+  count(fastress_id) |>
+  count(n)
+
+```
+
+```{r}
+# ============================================================
+# Food intake processing: RAW (all available sessions)
+# ============================================================
+
+food_long_raw <- food_all |>
+  pivot_longer(
+    cols = ends_with(c("_g_pre", "_g_post")),
+    names_to = "variable",
+    values_to = "grams"
+  ) |>
+  mutate(
+  grams = parse_num(grams),
+  phase = if_else(str_detect(variable, "_g_pre$"), "pre", "post"),
+  item  = str_remove(variable, "_g_(pre|post)$")
+) |>
+  select(fastress_id, session, item, phase, grams) |>
+  pivot_wider(
+    names_from = phase,
+    values_from = grams
+  ) |>
+mutate(
+  pre = parse_num(pre),
+  post = parse_num(post),
+  consumed_g = pre - post,
+  flag_negative = consumed_g < 0,
+  consumed_g_clean = if_else(consumed_g < 0, NA_real_, consumed_g)
+)
+
+# Wenn  Rohdaten Kommas enthalten könnten, ist as.numeric gefährlich, weil "12,5" zu NA wird -> deshalb food_long_raw durch parse_num ersetzen
+
+#Check
+food_long_raw |>
+  summarise(
+    n_pre_na = sum(is.na(pre)),
+    n_post_na = sum(is.na(post)),
+    n_consumed_na = sum(is.na(consumed_g))
+  )
+
+# Plausibility check
+food_long_raw |> count(flag_negative)
+
+
+food_session_raw <- food_long_raw |>
+  group_by(fastress_id, session) |>
+  summarise(
+    total_g = sum(consumed_g_clean, na.rm = TRUE),
+    n_items = n(),
+    n_flagged = sum(flag_negative == TRUE, na.rm = TRUE),
+    .groups = "drop")
+
+food_session_raw |> count(session)
+summary(food_session_raw$total_g)
+# =  insgesamt konsumierte Gramm pro Person × Session.
+
+# ============================================================
+# Food QC: check extreme values (session totals)
+# ============================================================
+
+food_session_raw |>
+  summarise(
+    p0 = min(total_g, na.rm = TRUE),
+    p25 = quantile(total_g, 0.25, na.rm = TRUE),
+    p50 = quantile(total_g, 0.50, na.rm = TRUE),
+    p75 = quantile(total_g, 0.75, na.rm = TRUE),
+    p95 = quantile(total_g, 0.95, na.rm = TRUE),
+    p99 = quantile(total_g, 0.99, na.rm = TRUE),
+    p100 = max(total_g, na.rm = TRUE)
+  )
+
+food_session_raw |>
+  arrange(desc(total_g)) |>
+  slice_head(n = 5)
+
+
+# ============================================================
+# Food intake processing: COMPLETE cases (T1 and T2 available)
+# ============================================================
+
+food_ids_complete <- food_all |>
+  distinct(fastress_id, session) |>
+  count(fastress_id, name = "n_sessions") |>
+  filter(n_sessions == 2) |>
+  pull(fastress_id)
+
+food_session_complete <- food_session_raw |>
+  filter(fastress_id %in% food_ids_complete)
+
+```
+
+beides: raw & complete, ohne Daten zu verlieren
+
+Long format bedeutet: eine Zeile = eine Beobachtungseinheit Statt viele Messungen in vielen Spalten zu haben, stehen sie untereinander in wenigen Spalten. ein Item -\> zu einem Zeitpunkt -\> für eine Person
+
+Merksatz für MA Methoden: „Food intake data were reshaped into long format to compute item level consumption before aggregation to the session level.“
+
+1.  Spaltennamen der Food Items prüfen
+2.  Food Daten von wide zu long umformatieren (\$ sagt:Muster muss am Ende des Strings stehen.)
+3.  kontrollieren, ob das Format stimmt (also ob ich jetzt columns habe)
+4.  konsumierte Gramm berechnen
+
+### Pausibility Check
+
+“Food intake was calculated as the difference between the weight of each item before and after the task. Plausibility was ensured by verifying that no post-task weight exceeded the pre-task weight; no negative intake values were observed.” “Outcome variables were computed prior to statistical analyses in order to identify implausible values and ensure data quality. Plausibility checks were based on predefined criteria rather than hypothesis testing. No implausible values were identified for food intake.”
+
+Interpretation: xx Zeilen -\> 0 davon haben einen negativen Kennwert -\> kein Item ist unplausibel - Consumed_g = Rohwert - Consumed_g_clean = bereinigter Wert (negative = NA) -\> keine negativen Werte vorhanden, deshlab -\> clean = raw
+
+## Import additional datasets: Blood Sampling
+
+In addition to food intake and stress ratings, questionnaire data and blood sampling data were imported to enable manipulation checks and the computation of psychological moderator variables.
+
+```{r}
+
+# --------------------------------------------------
+# Import anthropo + blood sampling data (T1/T2)
+# --------------------------------------------------
+list.files("data_raw")
+
+
+blood_t1 <- read_csv(
+  "data_raw/FASTRESS_measures-anthropo-blood(session T1).csv",
+  show_col_types = FALSE,
+  col_types = cols(.default = col_character())
+) |>
+  clean_names() |>
+  mutate(session = "T1") |>
+  mutate(
+    ketones_pre  = parse_num(ketones_pre),
+    ketones_post = parse_num(ketones_post),
+    glucose_pre  = parse_num(glucose_pre),
+    glucose_post = parse_num(glucose_post),
+    age = parse_num(age),
+    bmi_automatic_should_be_18_5_25 = parse_num(bmi_automatic_should_be_18_5_25)
+  ) |>
+  mutate(fastress_id = str_to_lower(fastress_id)) |>
+  filter(!is.na(fastress_id), str_detect(fastress_id, valid_id_pattern))
+
+
+
+blood_t2 <- read_csv(
+  "data_raw/FASTRESS_measures-anthropo-blood(session T2).csv",
+  show_col_types = FALSE,
+  col_types = cols(.default = col_character())
+) |>
+  clean_names() |>
+  mutate(session = "T2") |>
+  mutate(
+    ketones_pre  = parse_num(ketones_pre),
+    ketones_post = parse_num(ketones_post),
+    glucose_pre  = parse_num(glucose_pre),
+    glucose_post = parse_num(glucose_post),
+    age = parse_num(age),
+    bmi_automatic_should_be_18_5_25 = parse_num(bmi_automatic_should_be_18_5_25)
+  ) |>
+  mutate(fastress_id = str_to_lower(fastress_id)) |>
+  filter(!is.na(fastress_id), str_detect(fastress_id, valid_id_pattern))
+
+
+# Quick QC
+blood_t1 |> summarise(n_rows = n(), n_unique_id = n_distinct(fastress_id))
+blood_t2 |> summarise(n_rows = n(), n_unique_id = n_distinct(fastress_id))
+
+blood_t1 |> count(fastress_id) |> filter(n > 1)
+blood_t2 |> count(fastress_id) |> filter(n > 1)
+
+# --------------------------------------------------
+# Combine blood data across sessions
+# --------------------------------------------------
+
+blood_all <- bind_rows(blood_t1, blood_t2)
+
+blood_all |>
+  distinct(fastress_id, session) |>
+  count(session)
+
+blood_all |>
+  count(fastress_id, session) |>
+  filter(n > 1)
+
+
+# QC: Blood marker types
+# Erwartung numeric
+blood_all |>
+  summarise(
+    ketones_pre_type = paste(class(ketones_pre), collapse = ","),
+    glucose_pre_type = paste(class(glucose_pre), collapse = ","),
+    age_type = paste(class(age), collapse = ","),
+    bmi_type = paste(class(bmi_automatic_should_be_18_5_25), collapse = ",")
+  )
+
+
+```
+
+### Metabolic manipulation check (blood markers)
+
+#### Define metabolic condition per session (fasted vs satiated)
+
+Jede Person × Session bekommt eine eindeutige Bedingung: -\> fasted -\> satiated Unabhängig von Session-Reihenfolge, da diese randomisiert war
+
+“For female participants, menstrual cycle phase was monitored and considered during study scheduling. Due to limited statistical power, cycle phase was not included as an explicit factor in the main analyses.”
+
+```{r}
+# ============================================================
+# Define metabolic condition per session based on blood markers
+# ============================================================
+
+blood_condition <- blood_all |>
+  mutate(
+    fasting_ketones = (
+      (ketones_pre >= 0.5 & ketones_pre <= 1.5) |
+      (ketones_post >= 0.5 & ketones_post <= 1.5)
+    ),
+    fasting_glucose = (
+      (glucose_pre >= 3.9 & glucose_pre <= 5.6) |
+      (glucose_post >= 3.9 & glucose_post <= 5.6)
+    ),
+    satiated_ketones = (
+      ketones_pre < 0.6 |
+      ketones_post < 0.6
+    ),
+    satiated_glucose = (
+      (glucose_pre >= 6.7 & glucose_pre <= 7.8) |
+      (glucose_post >= 6.7 & glucose_post <= 7.8)
+    ),
+    condition = case_when(
+      fasting_ketones | fasting_glucose ~ "fasted",
+      satiated_ketones | satiated_glucose ~ "satiated",
+      TRUE ~ NA_character_
+    )
+  ) |>
+  select(fastress_id, session, condition)
+
+# Sanity checks
+blood_condition |> count(condition)
+blood_condition |> count(session, condition)
+
+
+
+```
+
+mutate(...) erstellt Hilfsvariablen, die prüfen, ob Werte in euren vordefinierten Ranges liegen blood_condition: eine Tabelle mit einer Zeile pro Person und Session und der biologisch verifizierten Condition.
+
+count(condition) zeigt, wie viele Sessions als fasted oder satiated klassifiziert wurden count(session, condition) zeigt, wie das über T1 und T2 verteilt ist (sollte bei Randomisierung nicht 100% an Session gebunden sein)
+
+### Planned condition (Randomisierung)
+
+```{r}
+# ============================================================
+# Planned condition (randomized metabolic state)
+# ============================================================
+
+planned_condition <- blood_all |>
+  transmute(
+    fastress_id,
+    session,
+    planned_condition = case_when(
+      str_to_upper(metabolic_state_s_f) == "F" ~ "fasted",
+      str_to_upper(metabolic_state_s_f) == "S" ~ "satiated",
+      TRUE ~ NA_character_
+    )
+  ) |>
+  distinct(fastress_id, session, .keep_all = TRUE)
+
+# Sanity checks
+planned_condition |> count(planned_condition)
+planned_condition |> count(session, planned_condition)
+
+```
+
+planned_condition: eine Tabelle mit der randomisierten Condition, also dem, was im Design vorgesehen war.
+
+Satz für Methodenteil: “Metabolic condition was coded at the session level based on blood glucose and ketone concentrations measured before and after the MRI session. Sessions were classified as fasted or satiated if at least one blood marker per session fell within the predefined range for the respective metabolic state.”
+
+### Randomisierungs-Check
+
+prüfen, ob fasted vs satiated ungefähr gleich oft in T1 vs T2 vorkommt.
+
+```{r}
+# ============================================================
+# Randomisation check: distribution across sessions (T1 vs T2)
+# ============================================================
+
+planned_condition |>
+  count(session, planned_condition)
+
+planned_condition |>
+  count(planned_condition, session) |>
+  group_by(planned_condition) |>
+  mutate(prop = n / sum(n)) |>
+  ungroup()
+
+```
+
+"Metabolic manipulation was verified based on blood glucose and ketones before and after the session. A session was considered biologically consistent with the planned condition if at least one marker supported the condition within predefined ranges. In the case of conflicting markers, the planned condition was used as the decision rule. Sessions without support from any marker were marked as unclear."
+
+```{r}
+# ============================================================
+# Blood based condition (compliance): planned_condition as tie breaker
+# ============================================================
+
+# Join planned_condition auf blood_all, damit wir bei Konflikt darauf zugreifen können
+blood_with_plan <- blood_all |>
+  left_join(planned_condition, by = c("fastress_id", "session"))
+
+# Flags pro Session: spricht der Marker fuer fasted oder satiated
+blood_condition_full <- blood_with_plan |>
+  mutate(
+    # Marker support fuer fasted
+    fasted_support_ket = (ketones_pre >= 0.5 & ketones_pre <= 1.5) |
+                         (ketones_post >= 0.5 & ketones_post <= 1.5),
+    fasted_support_glu = (glucose_pre >= 3.9 & glucose_pre <= 5.6) |
+                         (glucose_post >= 3.9 & glucose_post <= 5.6),
+
+    # Marker support fuer satiated
+    satiated_support_ket = (ketones_pre < 0.6) | (ketones_post < 0.6),
+    satiated_support_glu = (glucose_pre >= 6.7 & glucose_pre <= 7.8) |
+                           (glucose_post >= 6.7 & glucose_post <= 7.8),
+
+    # Zusammenfassung: mindestens ein Marker spricht dafuer
+    fasted_support   = fasted_support_ket | fasted_support_glu,
+    satiated_support = satiated_support_ket | satiated_support_glu,
+
+    # Konflikt: beide Seiten haben mindestens ein Support Signal
+    conflict_support = fasted_support & satiated_support,
+
+    # Kein Support: kein Marker stuetzt irgendeine Seite
+    no_support = !fasted_support & !satiated_support,
+
+    # Finale measured_condition:
+    # eindeutig -> entsprechend
+    # Konflikt -> planned_condition
+    # kein Support -> NA
+    measured_condition = case_when(
+      fasted_support & !satiated_support ~ "fasted",
+      satiated_support & !fasted_support ~ "satiated",
+      conflict_support ~ planned_condition,
+      TRUE ~ NA_character_
+    ),
+
+    # QC Label fuer Reporting
+    support_class = case_when(
+      fasted_support & !satiated_support ~ "support_fasted_only",
+      satiated_support & !fasted_support ~ "support_satiated_only",
+      conflict_support ~ "conflict_tie_break_planned",
+      TRUE ~ "no_support"
+    )
+  )
+
+# Tabelle für weitere Schritte
+blood_condition <- blood_condition_full |>
+  select(fastress_id, session, measured_condition)
+
+# QC: Verteilung und Konflikte
+blood_condition_full |>
+  count(support_class)
+
+blood_condition_full |>
+  summarise(
+    n_sessions = n(),
+    n_support_fasted_only = sum(support_class == "support_fasted_only"),
+    n_support_satiated_only = sum(support_class == "support_satiated_only"),
+    n_conflict = sum(support_class == "conflict_tie_break_planned"),
+    n_no_support = sum(support_class == "no_support"),
+    perc_no_support = mean(support_class == "no_support") * 100
+  )
+```
+
+### Manipulation Check Condition and Blood
+
+Ziel: Überpruefen, ob die geplante Condition (Randomisierung) mit der biologischen Klassifikation (Blutwerte) übereinstimmt.
+
+```{r}
+# ============================================================
+# Manipulation check: planned vs biologically verified condition
+# ============================================================
+
+condition_check <- planned_condition |>
+  left_join(blood_condition, by = c("fastress_id", "session"))
+
+# Crosstab
+condition_check |>
+  filter(!is.na(planned_condition), !is.na(measured_condition)) |>
+  count(planned_condition, measured_condition)
+
+# Agreement rate
+condition_check |>
+  filter(!is.na(planned_condition), !is.na(measured_condition)) |>
+  mutate(match = planned_condition == measured_condition) |>
+ summarise(
+  n_sessions = n(),
+  n_match = sum(match, na.rm = TRUE),
+  perc_match = mean(match, na.rm = TRUE) * 100
+)
+
+
+# Number of mismatches
+condition_check |>
+  filter(!is.na(planned_condition), !is.na(measured_condition)) |>
+  mutate(match = planned_condition == measured_condition) |>
+  count(match)
+
+# Welche Sessions waren Konflikt und wurden per planned_condition entschieden
+blood_condition_full |>
+  filter(support_class == "conflict_tie_break_planned") |>
+  select(fastress_id, session, planned_condition, measured_condition)
+
+# -> Wenn alles stimmt, ist bei diesen Zeilen measured_condition immer gleich planned_condition.
+
+
+```
+
+**Ergebnis:** Man bekommt eine klare Zahl wie: „X% der Sessions stimmen überein“ und eine Tabelle, die zeigt, wo Abweichungen passieren Warum diese Trennung so wichtig ist **planned_condition** = Designvariable (Randomisierung) -\> für Hauptanalysen **blood_condition** = Compliance/Manipulation Check -\> zur Validierung condition_check = Dokumentation, ob die Manipulation wirklich geklappt hat
+
+“Blood glucose and ketone concentrations measured before and after the MRI session were used to verify compliance with the metabolic manipulation. Because classification was based on predefined ranges and required only one marker per session to fall within the respective range, some sessions showed overlap between planned and blood based classification.”
+
+==\> Alle Hauptanalysen mit planned_condition durchführen.
+
+Alle Sessions anzeigen, die nicht übereinstimmen:
+
+```{r}
+condition_check |>
+  filter(
+    !is.na(planned_condition),
+    !is.na(measured_condition),
+    planned_condition != measured_condition
+  ) |>
+  select(
+    fastress_id,
+    session,
+    planned_condition,
+    measured_condition
+  )
+# These sessions were retained for all main analyses,
+# as experimental condition was defined by randomization.
+
+```
+
+```{r}
+# ============================================================
+# Blood marker descriptives by planned condition (pre values)
+# ============================================================
+
+# nicht nur „Range erfüllt“ überprüfen, sondern auch grob sehen ob ketones im fasted höher, glucose im fasted tiefer ist.
+
+blood_all |>
+  left_join(planned_condition, by = c("fastress_id", "session")) |>
+  filter(!is.na(planned_condition)) |>
+  group_by(planned_condition) |>
+  summarise(
+    n_sessions = n(),
+    ketones_pre_M = mean(ketones_pre, na.rm = TRUE),
+    ketones_pre_SD = sd(ketones_pre, na.rm = TRUE),
+    glucose_pre_M = mean(glucose_pre, na.rm = TRUE),
+    glucose_pre_SD = sd(glucose_pre, na.rm = TRUE)
+  )
+
+```
+
+# Import additional datasets: Questioinnaire
+
+### Import questionnaire data (T1/T2) and create FASTRESS ID from numeric SUB
+
+```{r}
+
+# --------------------------------------------------
+# Import questionnaire data (T1/T2) and create FASTRESS ID from numeric SUB
+# --------------------------------------------------
+
+survey_t1 <- read_csv("data_raw/FASTRESS_survey_T1_initial.csv",
+  show_col_types = FALSE
+) |>
+  clean_names() |>
+mutate(
+  session = "T1",
+  sub = as.character(sub),
+  sub = str_trim(sub),
+  sub = str_pad(sub, width = 3, side = "left", pad = "0"),
+  fastress_id = str_to_lower(paste0("sub-", sub))
+) |> filter(!is.na(sub), sub != "")
+
+
+survey_t2 <- read_csv(
+  "data_raw/FASTRESS_survey_T2_initial.csv",
+  show_col_types = FALSE
+) |>
+  clean_names() |>
+mutate(
+  session = "T2",
+  sub = as.character(sub),
+  sub = str_trim(sub),
+  sub = str_pad(sub, width = 3, side = "left", pad = "0"),
+  fastress_id = str_to_lower(paste0("sub-", sub))
+) |> filter(!is.na(sub), sub != "")
+
+
+# Quick QC
+survey_t1 |> summarise(n_rows = n(), n_unique_id = n_distinct(fastress_id))
+survey_t2 |> summarise(n_rows = n(), n_unique_id = n_distinct(fastress_id))
+
+#Survey T1: 20 Zeilen, aber nur 19 eindeutige IDs → eine ID kommt doppelt vor
+#Survey T2: 6 Zeilen, 6 IDs → ok
+
+survey_t1 |> count(fastress_id) |> filter(n > 1)
+survey_t2 |> count(fastress_id) |> filter(n > 1)
+
+survey_t1 |> distinct(fastress_id) |> slice_head(n = 10)
+
+# --------------------------------------------------
+# Identify duplicate participant in survey T1
+# --------------------------------------------------
+
+survey_t1 |>
+  count(fastress_id) |>
+  filter(n > 1)
+
+# Show the full rows for the duplicated ID(s)
+dup_ids_t1 <- survey_t1 |>
+  count(fastress_id) |>
+  filter(n > 1) |>
+  pull(fastress_id)
+
+survey_t1 |>
+  filter(fastress_id %in% dup_ids_t1) |>
+  select(fastress_id, id, submitdate, startdate, datestamp) |>
+  arrange(fastress_id, submitdate)
+```
+
+sub-002 kommt zweimal vor -\> beide sind T1 -\> den erst ausgefüllten behalten
+
+Pro Person und Session genau eine Zeile behalten -\> die erste ausgefüllte. Die zweite (falsch ausgefüllte T1) wird verworfen.
+
+Die Regel lautet jetzt (wichtig, auch für den Methodenteil): Wenn ein Fragebogen innerhalb derselben Session mehrfach ausgefüllt wurde, wurde die zuerst ausgefüllte Version beibehalten.
+
+```{r}
+ 
+# --------------------------------------------------
+# Deduplicate survey T1: keep FIRST submission per participant
+# --------------------------------------------------
+
+survey_t1 <- survey_t1 |>
+  mutate(
+    submitdate = as.POSIXct(submitdate, tz = "Europe/Zurich")
+  ) |>
+  arrange(fastress_id, submitdate) |>   # früheste zuerst
+  distinct(fastress_id, .keep_all = TRUE)
+
+# Re-check
+survey_t1 |> summarise(
+  n_rows = n(),
+  n_unique_id = n_distinct(fastress_id)
+)
+
+survey_t1 |> count(fastress_id) |> filter(n > 1)
+
+```
+
+**Nächster Schritt:** Survey T1 und T2 zusammenführen Zuerst Spalten zu gleichen Types machen. Type: Text (character): Text kann alles darstellen (Zahl, Wort, leer) -\> man verliert keine Information
+
+```{r}
+
+# --------------------------------------------------
+# Force same types everywhere before bind_rows
+# --------------------------------------------------
+
+# Jede Zelle in Text verwandeln
+survey_t1 <- survey_t1 |>
+  mutate(across(everything(), as.character))
+
+survey_t2 <- survey_t2 |>
+  mutate(across(everything(), as.character))
+
+# Kontrollcheck für die Problemspalte
+class(survey_t1$stim9)
+class(survey_t2$stim9)
+
+
+# --------------------------------------------------
+# Combine survey data across sessions
+# --------------------------------------------------
+
+survey_all <- bind_rows(survey_t1, survey_t2)
+
+# sagt mir wie viele Person–Session Kombinationen es gibt
+survey_all |>
+  distinct(fastress_id, session) |>
+  count(session)
+
+# Check: one row per person x session -> Erwartung: leer
+survey_all |>
+  count(fastress_id, session) |>
+  filter(n > 1)
+
+```
+
+### Survey scoring: Trait Moderatoren aus Survey T1 und T2
+
+```{r}
+# ============================================================
+# Survey scoring: Trait Moderatoren aus Survey T1 und T2
+# ============================================================
+
+
+# Funktion für Skalenmittelwerte (mit Mindestanzahl beantworteter Items)
+row_mean_safe <- function(df, items, min_n = 3) {
+  items <- intersect(items, names(df))
+  if (length(items) == 0) return(rep(NA_real_, nrow(df)))
+
+  m <- df |>
+    select(all_of(items)) |>
+    mutate(across(everything(), ~ readr::parse_number(str_replace(as.character(.x), ",", ".")))) |>
+    as.matrix()
+
+  n_nonmiss <- rowSums(!is.na(m))
+  out <- rowMeans(m, na.rm = TRUE)
+  out[n_nonmiss < min_n] <- NA_real_
+  out
+}
+
+# Funktion für Umpolung (Likert 1 bis 5)
+reverse_score <- function(x, min_val = 1, max_val = 5) {
+  x_num <- readr::parse_number(str_replace(as.character(x), ",", "."))
+  ifelse(is.na(x_num), NA_real_, (max_val + min_val) - x_num)
+}
+
+# Items finden (passen zu clean_names() deiner echten Dateien)
+items_sses   <- names(survey_all) |> str_subset("^sses_sses\\d+$")
+
+items_cerq <- names(survey_all) |> str_subset("^cerq_cerq\\d+$")
+
+# CERQ: Fix inkonsistente Itemnamen (cerq_cerq1..9 vs cerq_cer10..27)
+cerq_items_all <- c(
+  paste0("cerq_cerq", 1:9),
+  paste0("cerq_cer", 10:27)
+)
+
+missing_cerq <- setdiff(cerq_items_all, names(survey_all))
+if (length(missing_cerq) > 0) {
+  stop("CERQ Items fehlen im Datensatz: ", paste(missing_cerq, collapse = ", "))
+}
+items_srs <- names(survey_all) |> str_subset("^srs\\d+_srs\\d+$")
+
+# STADI Trait Anxiety (nur T-A Items laut Manual)
+
+stadit_trait_anxiety_items <- c(
+  "stadit_stadit2",
+  "stadit_stadit6",
+  "stadit_stadit10",
+  "stadit_stadit14",
+  "stadit_stadit18"
+)
+
+
+# EDEQ Restraint: in deinem Export heissen die Items so
+edeq_restraint_items <- paste0("edeq01to12_edeq", 1:5)
+
+
+# Mini Check: wurden Items gefunden
+c(
+  sses = length(items_sses),
+  stadit_trait_anxiety = length(intersect(stadit_trait_anxiety_items, names(survey_all))),
+  cerq = length(cerq_items_all),
+  edeq_restraint = length(intersect(edeq_restraint_items, names(survey_all)))
+)
+
+
+```
+
+### Umpolung
+
+```{r}
+# ============================================================
+# Reverse Items Listen definieren (aus Manuals)
+# ============================================================
+
+# SSES keine Umpolung
+sses_reverse_items <- character(0)
+
+
+# STADI Trait Angst -> keine Umpolung angstgerichtete Items
+stadit_trait_anxiety_reverse_items <- character(0)
+
+# EDEQ Restraint keine Umpolung
+edeq_restraint_reverse_items <- character(0)
+
+# CERQ keine Umpolung
+cerq_reverse_items <- character(0)
+
+
+# SRS Reverse Items via Itemnummern matchen
+
+srs_reverse_numbers <- c(
+  3, 6, 10, 11, 12, 14, 15, 17, 19,
+  21, 22, 23, 24, 25, 28
+)
+
+srs_item_numbers <- items_srs |>
+  stringr::str_match("^srs(\\d+)_") |>
+  (\(x) x[,2])() |>
+  as.integer()
+
+
+srs_reverse_items <- items_srs[srs_item_numbers %in% srs_reverse_numbers]
+
+# QC
+srs_reverse_items
+
+stopifnot(length(srs_reverse_items) == length(srs_reverse_numbers))
+
+# ============================================================
+# Apply reverse scoring
+# ============================================================
+
+survey_all_scored <- survey_all |>
+  mutate(
+    across(all_of(srs_reverse_items), ~ reverse_score(.x, min_val = 1, max_val = 3))
+  )
+
+```
+
+```{r}
+
+
+# ============================================================
+# CERQ: Adaptive vs maladaptive Skalen definieren (Itemlisten)
+# ============================================================
+
+cerq_maladaptive_items <- c(
+  # Self blame: 1,7,21
+  "cerq_cerq1", "cerq_cerq7", "cerq_cer21",
+  # Other blame: 6,15,27
+  "cerq_cerq6", "cerq_cer15", "cerq_cer27",
+  # Rumination: 3,9,16
+  "cerq_cerq3", "cerq_cerq9", "cerq_cer16",
+  # Catastrophizing: 14,20,26
+  "cerq_cer14", "cerq_cer20", "cerq_cer26"
+)
+
+cerq_adaptive_items <- c(
+  # Acceptance: 2,8,22
+  "cerq_cerq2", "cerq_cerq8", "cerq_cer22",
+  # Positive refocusing: 4,10,17
+  "cerq_cerq4", "cerq_cer10", "cerq_cer17",
+  # Refocus on planning: 5,11,23
+  "cerq_cerq5", "cerq_cer11", "cerq_cer23",
+  # Positive reappraisal: 12,18,24
+  "cerq_cer12", "cerq_cer18", "cerq_cer24",
+  # Putting into perspective: 13,19,25
+  "cerq_cer13", "cerq_cer19", "cerq_cer25"
+)
+
+# Safety check
+missing_sub <- setdiff(c(cerq_adaptive_items, cerq_maladaptive_items), names(survey_all))
+if (length(missing_sub) > 0) {
+  stop("CERQ Subskalen Items fehlen: ", paste(missing_sub, collapse = ", "))
+}
+
+
+
+```
+
+### Skalen berechnen
+
+```{r}
+
+# 4) Skalen pro Person und Session berechnen
+survey_scales_session <- survey_all_scored |>
+  mutate(
+    srs_mean = row_mean_safe(pick(everything()), items_srs, min_n = 15),
+    sses_mean = row_mean_safe(pick(everything()), items_sses, min_n = 5),
+    stadit_trait_anxiety = row_mean_safe(pick(everything()), stadit_trait_anxiety_items,min_n = 3),
+    edeq_restraint = row_mean_safe(pick(everything()), edeq_restraint_items, min_n = 3),
+    cerq_adaptive_mean = row_mean_safe(pick(everything()), cerq_adaptive_items, min_n = 12),
+    cerq_maladaptive_mean = row_mean_safe(pick(everything()), cerq_maladaptive_items, min_n = 9)
+  ) |>
+transmute(
+  fastress_id,
+  session,
+  srs_mean,
+  sses_mean,
+  cerq_adaptive_mean,
+  cerq_maladaptive_mean,
+  stadit_trait_anxiety,
+  edeq_restraint
+)
+
+# Warum min_n so: adaptive hat 15 Items, maladaptive hat 12 Items. Mit 10 bzw 8 zwingt man eine sinnvolle Mindestbeantwortung
+#Achtung: Cerq wieder auf 12 und 9 setzten
+
+# 5) QC pro Session
+survey_scales_session |>
+  group_by(session) |>
+  summarise(
+    n_rows = n(),
+    n_srs = sum(!is.na(srs_mean)),
+    n_sses = sum(!is.na(sses_mean)),
+    n_cerq_adapt = sum(!is.na(cerq_adaptive_mean)),
+    n_cerq_mal = sum(!is.na(cerq_maladaptive_mean)),
+    n_stadit = sum(!is.na(stadit_trait_anxiety)),
+    n_edeq = sum(!is.na(edeq_restraint)),
+    .groups = "drop"
+  )
+
+# ============================================================
+# QC: SRS Umpolung Check
+# ============================================================
+
+# srs_min >= 1
+# srs_max <= 3
+
+survey_scales_session |>
+  summarise(
+    srs_min = min(srs_mean, na.rm = TRUE),
+    srs_max = max(srs_mean, na.rm = TRUE),
+    srs_mean_overall = mean(srs_mean, na.rm = TRUE),
+    srs_sd = sd(srs_mean, na.rm = TRUE)
+  )
+
+
+# 6) Person Level Traits ziehen: T1 wenn vorhanden, sonst T2
+survey_person <- survey_scales_session |>
+  arrange(fastress_id, session) |>
+  group_by(fastress_id) |>
+  summarise(
+    srs_mean = coalesce(srs_mean[session == "T1"][1], srs_mean[session == "T2"][1]),
+    sses_mean = coalesce(sses_mean[session == "T1"][1], sses_mean[session == "T2"][1]),
+    stadit_trait_anxiety = coalesce(
+  stadit_trait_anxiety[session == "T1"][1],
+  stadit_trait_anxiety[session == "T2"][1]),
+    edeq_restraint = coalesce(edeq_restraint[session == "T1"][1], edeq_restraint[session == "T2"][1]),
+    cerq_adaptive_mean = coalesce(cerq_adaptive_mean[session == "T1"][1], cerq_adaptive_mean[session == "T2"][1]),
+cerq_maladaptive_mean = coalesce(cerq_maladaptive_mean[session == "T1"][1], cerq_maladaptive_mean[session == "T2"][1]),
+    .groups = "drop"
+  )
+
+# 7) QC Person Level
+survey_person |>
+  summarise(
+    n_persons = n(),
+    n_srs = sum(!is.na(srs_mean)),
+    n_sses = sum(!is.na(sses_mean)),
+    n_cerq_adapt = sum(!is.na(cerq_adaptive_mean)),
+    n_cerq_mal = sum(!is.na(cerq_maladaptive_mean)),
+    n_stadit = sum(!is.na(stadit_trait_anxiety)),
+    n_edeq = sum(!is.na(edeq_restraint))
+  )
+
+names(survey_scales_session)
+
+```
+
+### Stichprobenbeschreibung: Bildung und Geschlecht:
+
+```{r}
+# ============================================================
+# Stichprobenbeschreibung: Bildung und Geschlecht
+# ============================================================
+
+# --------------------------------------------------
+# 1. Bildung (Survey: giq10education)
+# --------------------------------------------------
+
+education_person <- survey_all |>
+  mutate(
+    giq10education = parse_num(giq10education)
+  ) |>
+  select(fastress_id, session, giq10education) |>
+  arrange(fastress_id, session) |>
+  group_by(fastress_id) |>
+  summarise(
+    education = coalesce(
+      giq10education[session == "T1"][1],
+      giq10education[session == "T2"][1]
+    ),
+    .groups = "drop"
+  )
+
+# Labels laut Codebook
+education_person <- education_person |>
+  mutate(
+    education_label = case_when(
+      education == 1 ~ "keine abgeschlossene Ausbildung",
+      education == 2 ~ "obligatorische Schule abgeschlossen",
+      education == 3 ~ "10. Schuljahr oder Berufsvorbereitung",
+      education == 4 ~ "Anlehre",
+      education == 5 ~ "Berufslehre",
+      education == 6 ~ "Vollzeitberufsschule",
+      education == 7 ~ "Fachmittelschule",
+      education == 8 ~ "Maturitaet oder Berufsmaturitaet",
+      education == 9 ~ "eidg. Diplom oder eidg. Fachausweis",
+      education == 10 ~ "Techniker oder Fachschule",
+      education == 11 ~ "hoehere Fachschule HTL HWV",
+      education == 12 ~ "Universitaet Fachhochschule PH ETH",
+      TRUE ~ NA_character_
+    )
+  )
+
+# Tabelle fuer Ergebnisteil
+education_person |>
+  count(education_label) |>
+  mutate(prop = n / sum(n))
+
+education_person |> summarise(
+  n_persons = n(),
+  n_missing_education = sum(is.na(education))
+)
+
+
+# --------------------------------------------------
+# 2. Geschlecht (Blood Daten)
+# --------------------------------------------------
+
+sex_person <- blood_all |>
+  mutate(
+    sex_male_m_female_f = str_to_upper(str_trim(as.character(sex_male_m_female_f)))
+  ) |>
+  select(fastress_id, session, sex_male_m_female_f) |>
+  arrange(fastress_id, session) |>
+  group_by(fastress_id) |>
+  summarise(
+    sex = coalesce(
+      sex_male_m_female_f[session == "T1"][1],
+      sex_male_m_female_f[session == "T2"][1]
+    ),
+    .groups = "drop"
+  ) |>
+  mutate(
+    sex_label = case_when(
+      sex == "M" ~ "maennlich",
+      sex == "F" ~ "weiblich",
+      TRUE ~ NA_character_
+    )
+  )
+
+sex_person |>
+  count(sex_label) |>
+  mutate(prop = n / sum(n))
+
+sex_person |> summarise(
+  n_persons = n(),
+  n_missing_sex = sum(is.na(sex_label))
+)
+
+
+# --------------------------------------------------
+# 3. Demografie Tabelle (Table 1 Basis)
+# --------------------------------------------------
+
+table1_sample <- education_person |>
+  left_join(sex_person |> select(fastress_id, sex_label), by = "fastress_id")
+
+
+table1_sample
+
+
+```
+
+## Sample overview and ID matching
+
+Ziel dieses Abschnitts: Wissen, wer in welchen Datensätzen vorkommt, bevor man irgendwas mergt oder Analysen macht.
+
+Es sind mehrere Datensaetze: Nicht jede Person hat alles vollständig. --\> Deshalb muss man zuerst strukturieren, welche Personen in welchen Daten vorhanden sind.
+
+```{r}
+# --------------------------------------------------
+# Extract participant IDs per dataset
+# --------------------------------------------------
+
+ids_food <- food_session_raw |> distinct(fastress_id)
+ids_blood <- blood_all |> distinct(fastress_id)
+ids_survey <- survey_person |> distinct(fastress_id)
+
+```
+
+distinct(fastress_id) bedeutet: Gib mir jede ID nur einmal.\
+**Warum?** In food_session hat jede Person zwei Zeilen (T1 und T2). Wenn man einfach nrow(food_session) zählt, zählt man Sessions, nicht Personen.\
+-\> distinct(fastress_id) macht daraus eine reine Personenliste.
+
+**Ergebnis:** ids_food ist eine Tabelle mit einer Spalte (fastress_id) und einer Zeile pro Person, die Food Daten hat. Gleiches fuer Blood und Survey. Man baut damit drei „Teilnehmerlisten“.
+
+```{r}
+# --------------------------------------------------
+# Sample sizes per dataset
+# --------------------------------------------------
+
+list(
+  food = nrow(ids_food),
+  blood = nrow(ids_blood),
+  survey = nrow(ids_survey)
+)
+
+# nrow(...) zählt, wie viele Zeilen eine Tabelle hat.
+
+```
+
+## Überschneidung ansehen -\> wichtig: Wer ist in welchem Datensatz?
+
+```{r}
+# --------------------------------------------------
+# Overlap between datasets
+# --------------------------------------------------
+
+ids_overview <- ids_food |>
+  mutate(in_food = TRUE) |>
+  full_join(ids_blood |> mutate(in_blood = TRUE), by = "fastress_id") |>
+  full_join(ids_survey |> mutate(in_survey = TRUE), by = "fastress_id") |>
+  mutate(across(starts_with("in_"), ~replace_na(.x, FALSE)))
+
+```
+
+mutate(in_food = TRUE)\
+Bedeutung: Füge eine neue Spalte hinzu, die sagt: Diese Person ist in Food vorhanden.
+
+Warum TRUE FALSE? - Weil wir nachher eine Tabelle wollen, wo für jede Person steht: -\> in_food: TRUE oder FALSE -\> in_blood: TRUE oder FALSE -\> in_survey: TRUE oder FALSE
+
+full_join(ids_blood \|\> mutate(in_blood = TRUE), by = "fastress_id") Bedeutung: Verbinde die Food Liste mit der Blood Liste, und nimm alle IDs aus beiden.\
+Wichtig: full_join ist hier zentral, weil es alle behalten soll:\
+-\> Personen, die nur Food haben\
+-\> Personen, die nur Blood haben\
+-\> Personen, die beides haben
+
+Nach einem full join sind bei Personen, die z B nicht in Survey sind, die Spalte in_survey erstmal NA.\
+NA heisst: „unbekannt“ oder „fehlt“. Aber wir wollen: Wenn jemand nicht im Survey ist, soll das explizit FALSE sein. Darum: mutate(across(starts_with("in\_"), \~replace_na(.x, FALSE)))
+
+Kombiationen zählen:
+
+```{r}
+ids_overview |> count(in_food, in_blood, in_survey)
+```
+
+Bedeutung: Wie viele Personen gehören zu jeder Kombination?\
+Beispiele:\
+TRUE TRUE TRUE = Personen mit allen drei Datensaetzen\
+TRUE TRUE FALSE = Personen mit Food + Blood, aber ohne Survey\
+TRUE FALSE TRUE = Food + Survey, aber kein Blood
+
+==\> wichtig für Ergebnisteil
+
+# Stichprobenbeschreibung
+
+Gesamtstichprobe (alle mit mindestens einer gültigen Session) Analysestichprobe (nur complete cases für Within Subject Modelle)
+
+```{r}
+
+# ============================================================
+# Stichprobenbeschreibung 1: Datenverfügbarkeit (Personenebene)
+# ============================================================
+
+# Sample sizes per dataset (Personen, nicht Sessions)
+n_food  <- nrow(ids_food)
+n_blood <- nrow(ids_blood)
+n_survey <- nrow(ids_survey)
+
+tibble(
+  dataset = c("food", "blood", "survey"),
+  n_persons = c(n_food, n_blood, n_survey)
+)
+
+# Overlap Kombinationen
+ids_overview |>
+  count(in_food, in_blood, in_survey) |>
+  arrange(desc(n))
+
+
+```
+
+## Demografische Variablen
+
+```{r}
+# ============================================================
+# Stichprobenbeschreibung 3: Baseline Demografie (Personenebene)
+# ============================================================
+
+# Eine Zeile pro Person aus blood_all ziehen
+# T1 bevorzugen, sonst T2
+blood_person <- blood_all |>
+  arrange(fastress_id, session) |>
+  group_by(fastress_id) |>
+  summarise(
+    age = coalesce(age[session == "T1"][1], age[session == "T2"][1]),
+    sex_male_m_female_f = coalesce(sex_male_m_female_f[session == "T1"][1], sex_male_m_female_f[session == "T2"][1]),
+    bmi_automatic_should_be_18_5_25 = coalesce(bmi_automatic_should_be_18_5_25[session == "T1"][1], bmi_automatic_should_be_18_5_25[session == "T2"][1]),
+    .groups = "drop"
+  )
+
+# Deskriptive kontinuierlich
+blood_person |>
+  summarise(
+    n_persons = n(),
+    age_M = mean(age, na.rm = TRUE),
+    age_SD = sd(age, na.rm = TRUE),
+    bmi_M = mean(bmi_automatic_should_be_18_5_25, na.rm = TRUE),
+    bmi_SD = sd(bmi_automatic_should_be_18_5_25, na.rm = TRUE)
+  )
+
+# Häufigkeiten kategorial
+blood_person |> count(sex_male_m_female_f)
+
+```
+
+## Outcome Variablen für Food final bauen: kcal und High vs Low
+
+folgender Code berechnet: total_kcal high_kcal low_kcal prop_high_kcal
+
+```{r}
+# --------------------------------------------------
+# Food kcal mapping and aggregation to session level
+# --------------------------------------------------
+
+# Check which food items are present in the long-format dataset
+# This ensures that all items can be matched to the kcal lookup table
+food_long_raw |> count(item)
+
+# ============================================================
+# Food QC: post can not be bigger than pre
+# ============================================================
+food_long_raw |>
+  mutate(post_gt_pre = if_else(!is.na(pre) & !is.na(post), post > pre, NA)) |>
+  count(post_gt_pre)
+
+# Show Missingness
+food_long_raw |>
+  summarise(
+    n_pre_na = sum(is.na(pre)),
+    n_post_na = sum(is.na(post))
+  )
+
+# if there is TRUE we need to see the collumns. If it is empty = perfect
+food_long_raw |>
+  filter(!is.na(pre) & !is.na(post) & post > pre) |>
+  select(fastress_id, session, item, pre, post, consumed_g, consumed_g_clean)
+
+# QC Since the items were weighed before tasting, the pre-values should be relatively constant per item.
+food_long_raw |>
+  group_by(item) |>
+  summarise(
+    pre_min = min(pre, na.rm = TRUE),
+    pre_max = max(pre, na.rm = TRUE),
+    pre_sd = sd(pre, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# --------------------------------------------------
+# Food lookup check: which items are not in the lookup table
+# --------------------------------------------------
+
+# Create a lookup table containing the energy density (kcal per gram)
+# and the a priori classification into low- vs high-calorie items
+food_kcal_lookup <- tibble(
+  item = c("apple", "cake", "chips", "chocolate", "cracker", "nuts"),
+  kcal_per_g = c(0.55, 4.18, 4.98, 5.72, 4.31, 5.83),
+  item_type = c("low", "high", "high", "high", "low", "low")
+)
+
+missing_items <- setdiff(
+  unique(food_long_raw$item),
+  food_kcal_lookup$item
+)
+missing_items
+
+# Stop the script if any food item cannot be matched
+stopifnot(length(missing_items) == 0)
+
+
+# Merge food intake data with kcal information and compute energy intake
+# per item, followed by aggregation to the person-by-session level
+food_session_raw_kcal <- food_long_raw |>
+  # Attach kcal per gram and item category to each consumed item
+  left_join(food_kcal_lookup, by = "item") |>
+  
+  # Compute consumed energy (kcal) per item
+  # Negative or implausible intake values were set to NA beforehand
+  mutate(consumed_kcal = consumed_g_clean * kcal_per_g) |>
+  
+  # Aggregate data to one row per participant and session
+  group_by(fastress_id, session) |>
+  summarise(
+    # Total energy intake across all food items
+    total_kcal = sum(consumed_kcal, na.rm = TRUE),
+    
+    # Energy intake from high-calorie food items only
+    high_kcal  = sum(consumed_kcal[item_type == "high"], na.rm = TRUE),
+    
+    # Energy intake from low-calorie food items only
+    low_kcal   = sum(consumed_kcal[item_type == "low"], na.rm = TRUE),
+    
+    # Proportion of energy intake derived from high-calorie items
+    # Set to NA if no energy was consumed during the session
+prop_high_kcal = if_else(
+  total_kcal > 0,
+  high_kcal / total_kcal,
+  NA_real_
+),
+    
+    # Remove grouping after summarisation
+    .groups = "drop"
+  )
+
+# Check whether total_kcal really equals high plus low.
+food_session_raw_kcal |>
+  mutate(diff = total_kcal - (high_kcal + low_kcal)) |>
+  summarise(
+    max_abs_diff = max(abs(diff), na.rm = TRUE)
+  )
+# Quality control: verify that all food items were successfully matched
+# to the kcal lookup table (expected values: 0 missing)
+food_long_raw |>
+  left_join(food_kcal_lookup, by = "item") |>
+  summarise(
+    n_missing_kcal = sum(is.na(kcal_per_g)),
+    n_missing_type = sum(is.na(item_type))
+  )
+
+
+```
+
+Für Methodenteil: "Food intake was calculated as the difference between pre and post weights. Post values of zero indicated complete consumption. Plausibility checks confirmed that post-task weights never exceeded pre-task weights."
+
+### Merge QC:
+
+Alle drei Outputs sollten leer sein.
+
+```{r}
+# ============================================================
+# Merge QC 3: Verify uniqueness of join keys in right tables
+# ============================================================
+
+# planned_condition must have unique fastress_id plus session
+planned_condition |>
+  count(fastress_id, session) |>
+  filter(n > 1)
+
+# blood markers selected table must have unique fastress_id plus session
+blood_all |>
+  select(fastress_id, session, ketones_pre, glucose_pre, ketones_post, glucose_post) |>
+  count(fastress_id, session) |>
+  filter(n > 1)
+
+# survey_person must have unique fastress_id
+survey_person |>
+  count(fastress_id) |>
+  filter(n > 1)
+```
+
+Für den Methodenteil: “Outcome variables were computed independently of experimental condition. Metabolic state (fasted vs. satiated) was subsequently coded at the session level, accounting for the randomized order of experimental sessions.”
+
+das ist der zentraler Analysedatensatz:
+
+```{r}
+# ============================================================
+# Build final session-level analysis dataset
+# ============================================================
+
+analysis_session <- food_session_raw_kcal |>
+  left_join(planned_condition, by = c("fastress_id", "session")) |>
+  left_join(
+    blood_all |>
+      select(
+        fastress_id,
+        session,
+        ketones_pre,
+        glucose_pre,
+        ketones_post,
+        glucose_post
+      ),
+    by = c("fastress_id", "session")
+  )
+
+# Grundlegende Qualitätschecks
+analysis_session |>
+  summarise(
+    n_rows = n(),
+    n_ids = n_distinct(fastress_id),
+    n_missing_condition = sum(is.na(planned_condition))
+  )
+
+analysis_session |> count(session, planned_condition)
+
+```
+
+### Check nach dem Join von planned_condition und blood_all
+
+-   n_rows und n_pairs sollten gleich sein
+
+-   Der zweite Output muss leer sein
+
+```{r}
+# ============================================================
+# Merge QC: Check for row inflation after joining condition and blood
+# ============================================================
+
+# Expected: one row per participant and session
+# If any fastress_id plus session appears more than once, a join created duplicates
+
+analysis_session |>
+  summarise(
+    n_rows = n(),
+    n_ids = n_distinct(fastress_id),
+    n_pairs = n_distinct(paste(fastress_id, session))
+  )
+
+# This must be empty. If not, you have duplicate keys on the right side table
+analysis_session |>
+  count(fastress_id, session) |>
+  filter(n > 1)
+```
+
+## Merge Trait Moderatoren in analysis_session + Zentrierung
+
+```{r}
+# ============================================================
+# Merge Trait Moderatoren in analysis_session + Zentrierung
+# ============================================================
+
+analysis_session <- analysis_session |>
+  left_join(survey_person, by = "fastress_id") |>
+  mutate(
+    subject = factor(fastress_id),
+    session = factor(session, levels = c("T1", "T2")),
+    planned_condition = factor(planned_condition, levels = c("satiated", "fasted")),
+
+    srs_c = as.numeric(scale(srs_mean, center = TRUE, scale = FALSE)),
+    sses_c = as.numeric(scale(sses_mean, center = TRUE, scale = FALSE)),
+  cerq_adaptive_c = as.numeric(scale(cerq_adaptive_mean, center = TRUE, scale = FALSE)),
+cerq_maladaptive_c = as.numeric(scale(cerq_maladaptive_mean, center = TRUE, scale = FALSE)),
+    stadit_c = as.numeric(scale(stadit_trait_anxiety, center = TRUE, scale = FALSE)),
+    edeq_restraint_c = as.numeric(scale(edeq_restraint, center = TRUE, scale = FALSE))
+  )
+
+
+names(survey_person)
+names(analysis_session)
+
+# ============================================================
+# QC: zentrale Numerics wirklich numeric
+# ============================================================
+
+analysis_session |>
+  summarise(
+    total_kcal_type = paste(class(total_kcal), collapse = ","),
+    high_kcal_type = paste(class(high_kcal), collapse = ","),
+    low_kcal_type = paste(class(low_kcal), collapse = ","),
+    prop_high_kcal_type = paste(class(prop_high_kcal), collapse = ","),
+    ketones_pre_type = paste(class(ketones_pre), collapse = ","),
+    glucose_pre_type = paste(class(glucose_pre), collapse = ","),
+    srs_type = paste(class(srs_mean), collapse = ",")
+  )
+
+
+# QC: sind Traits jetzt im Analysedatensatz
+analysis_session |>
+  summarise(
+    n_ids = n_distinct(fastress_id),
+    n_srs = sum(!is.na(srs_mean)),
+    n_sses = sum(!is.na(sses_mean)),
+    n_stadit = sum(!is.na(stadit_trait_anxiety))
+  )
+
+
+```
+
+### Check for row inflation after joining survey traits
+
+-   n_rows und n_pairs sollten gleich sein
+
+-   Der zweite Output muss leer sein
+
+```{r}
+# ============================================================
+# Merge QC: Check for row inflation after joining survey traits
+# ============================================================
+
+# Expected: still one row per participant and session
+
+analysis_session |>
+  summarise(
+    n_rows = n(),
+    n_ids = n_distinct(fastress_id),
+    n_pairs = n_distinct(paste(fastress_id, session))
+  )
+
+# This must be empty
+analysis_session |>
+  count(fastress_id, session) |>
+  filter(n > 1)
+```
+
+## Missingness Reporting
+
+### Session-Level
+
+```{r}
+# ============================================================
+# Missingness Report: Session level (analysis_session)
+# ============================================================
+
+# This block creates a compact overview of missing values in key variables.
+# It helps reporting the analysis sample and data completeness transparently.
+
+missing_session <- analysis_session |>
+  summarise(
+    n_rows = n(),
+    n_ids = n_distinct(fastress_id),
+
+    # Design variable
+    n_missing_planned_condition = sum(is.na(planned_condition)),
+
+    # Food outcomes
+    n_missing_total_kcal = sum(is.na(total_kcal)),
+    n_missing_prop_high_kcal = sum(is.na(prop_high_kcal)),
+
+    # Blood markers (pre values used most often descriptively)
+    n_missing_ketones_pre = sum(is.na(ketones_pre)),
+    n_missing_glucose_pre = sum(is.na(glucose_pre)),
+
+    # Trait moderators (person level merged into session table)
+    n_missing_srs = sum(is.na(srs_mean)),
+    n_missing_sses = sum(is.na(sses_mean)),
+    n_missing_stadit = sum(is.na(stadit_trait_anxiety)),
+    n_missing_edeq = sum(is.na(edeq_restraint)),
+    n_missing_cerq_adaptive = sum(is.na(cerq_adaptive_mean)),
+    n_missing_cerq_maladaptive = sum(is.na(cerq_maladaptive_mean))
+  )
+
+missing_session
+```
+
+## Person-Level
+
+```{r}
+# ============================================================
+# Missingness Report: Person level availability and paired sample
+# ============================================================
+
+# This block shows how many participants have one vs two sessions
+# and how many have complete paired data for within-subject models.
+
+availability_person <- analysis_session |>
+  distinct(fastress_id, session) |>
+  count(fastress_id, name = "n_sessions") |>
+  count(n_sessions)
+
+availability_person
+
+# Define paired sample: participants with both sessions AND valid planned_condition AND food outcome
+paired_ids <- analysis_session |>
+  filter(!is.na(planned_condition), !is.na(total_kcal)) |>
+  distinct(fastress_id, session) |>
+  count(fastress_id, name = "n_sessions") |>
+  filter(n_sessions == 2) |>
+  pull(fastress_id)
+
+# Summary for paired sample
+paired_summary <- analysis_session |>
+  filter(fastress_id %in% paired_ids) |>
+  summarise(
+    n_rows = n(),
+    n_ids = n_distinct(fastress_id),
+    n_sessions = n_distinct(session)
+  )
+
+paired_summary
+```
+
+## Define Sample
+
+```{r}
+# ============================================================
+# Analysis samples: explicit objects for later models
+# ============================================================
+
+# Session-level sample: all available sessions with food outcome and planned condition
+analysis_session_sample <- analysis_session |>
+  filter(!is.na(planned_condition), !is.na(total_kcal))
+
+# Paired within-subject sample: only participants with both sessions in the session-level sample
+analysis_paired_sample <- analysis_session_sample |>
+  distinct(fastress_id, session) |>
+  count(fastress_id, name = "n_sessions") |>
+  filter(n_sessions == 2) |>
+  pull(fastress_id) |>
+  (\(ids) analysis_session_sample |> filter(fastress_id %in% ids))()
+
+# Quick sanity checks
+analysis_session_sample |>
+  summarise(n_rows = n(), n_ids = n_distinct(fastress_id))
+
+analysis_paired_sample |>
+  summarise(n_rows = n(), n_ids = n_distinct(fastress_id))
+```
+
+# Save cleaned datasets
+
+```{r}
+# ============================================================
+# Save cleaned datasets for analysis
+# ============================================================
+
+cat("Cleaning file rendered at:", Sys.time(), "\n")
+
+dir.create("data_clean", showWarnings = FALSE)
+
+saveRDS(analysis_session, "data_clean/analysis_session.rds")
+saveRDS(survey_person, "data_clean/survey_person.rds")
+saveRDS(condition_check, "data_clean/condition_check.rds")
+
+
+```

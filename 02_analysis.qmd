@@ -1,0 +1,1119 @@
+---
+title: "FASTRESS 02 Analysis"
+format: html
+editor: visual
+---
+
+```{r}
+
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(tibble)
+library(ggplot2)
+library(lme4)
+library(lmerTest)
+
+analysis_session <- readRDS("data_clean/analysis_session.rds")
+survey_person <- readRDS("data_clean/survey_person.rds")
+condition_check <- readRDS("data_clean/condition_check.rds")
+stress_person <- readRDS("data_clean/stress_person.rds")
+
+
+
+```
+
+Im Cleaning File erstellst du `subject = factor(fastress_id)`.
+
+Im Analyse File solltest du direkt nach readRDS einmal checken, ob das wirklich drin ist:
+
+```{r}
+stopifnot("subject" %in% names(analysis_session))
+stopifnot("planned_condition" %in% names(analysis_session))
+```
+
+# Analysis
+
+## Analyse Stichproben definieren und dokumentieren
+
+Was man macht? Man berechnet, wie viele Personen fuer welche Analyse zur Verfuegung stehen: within Subject Analysen brauchen zwei Sessions pro Person Moderation braucht zusätzlich Moderatorwerte
+
+Wieso man das macht? So weiss man vor dem Modellieren exakt, welches N man verwendet, und man kann es spaeter im Ergebnisteil korrekt berichten.
+
+Anzahl Personen insgesamt Anzahl Personen mit zwei Sessions Anzahl Personen mit gueltigen Moderatorwerten
+
+Methodenteil: "Primary analyses were conducted using within subject mixed effects models including only participants with complete data for both experimental sessions. The primary outcome was total energy intake (total_kcal). Planned metabolic condition (fasted vs satiated) was entered as a fixed effect, with a random intercept for participant. Stress reactivity (SRS) was tested as a continuous moderator."
+
+```{r}
+# --------------------------------------------------
+# Sample sizes for planned analyses
+# --------------------------------------------------
+
+
+# Hauptsample: complete cases für within subject Analysen
+ids_complete <- analysis_session |>
+  filter(!is.na(planned_condition)) |>
+  distinct(fastress_id, session) |>
+  count(fastress_id, name = "n_sessions") |>
+  filter(n_sessions == 2) |>
+  pull(fastress_id)
+
+```
+
+## feste Analyse Samples definieren
+
+Was: Du erstellst dir fixe Datensätze, die du danach konsequent in allen Modellen verwendest. Warum: So bleibt dein N stabil und du berichtest später exakt dieselben Samples, die du wirklich analysiert hast.
+
+```{r}
+# ============================================================
+# Analyse Setup: fixe Analyse Samples
+# ============================================================
+
+# Hauptsample: within subject, complete cases
+dat_main <- analysis_session |>
+  filter(
+    fastress_id %in% ids_complete,
+    !is.na(planned_condition),
+    !is.na(total_kcal)
+  )
+
+dat_main |> count(fastress_id) |> count(n)
+# -> Analysesample überprüfen: NN = Anzahl Personen, N = 2 Zeilen pro Person
+
+```
+
+## Stichprobenbeschreibung: Analyse Samples
+
+```{r}
+# ============================================================
+# Stichprobenbeschreibung 2: Analyse Samples (Sessions und Personen)
+# ============================================================
+
+# Gesamt: alle vorhandenen Sessions mit geplanter Condition
+analysis_session |>
+  summarise(
+    n_total_sessions = sum(!is.na(planned_condition)),
+    n_total_persons  = n_distinct(fastress_id[!is.na(planned_condition)])
+  )
+
+# Designkonformes Hauptsample: complete cases (2 Sessions pro Person) + Outcome vorhanden
+dat_main |>
+  summarise(
+    n_sessions = n(),
+    n_persons  = n_distinct(fastress_id)
+  )
+
+# Zusatz: wie viele complete cases wurden identifiziert (Personenebene)
+tibble(
+  n_complete_persons = length(ids_complete)
+)
+
+# Tabelle für Ergebnisteil
+dat_main |>
+  group_by(planned_condition) |>
+  summarise(
+    n_sessions = n(),
+    n_persons = n_distinct(fastress_id),
+    .groups = "drop"
+  )
+
+```
+
+## Carryover / Order Check
+
+1.  prüfen, ob gleiches Sample wie Haupanalyse. Erwartung: Jede Person hat 2 Zeilen Einmal T1 und einmal T2 Und planned_condition ist nicht NA
+
+```{r}
+dat_main |>
+  distinct(fastress_id, session, planned_condition) |>
+  count(fastress_id) |>
+  count(n)
+
+dat_main |>
+  count(session, planned_condition)
+
+```
+
+2.  Baue eine Order Variable pro Person Definition: fasted_first bedeutet T1 ist fasted satiated_first bedeutet T1 ist satiated
+
+```{r}
+order_tbl <- dat_main |>
+  select(fastress_id, session, planned_condition) |>
+  mutate(planned_condition = as.character(planned_condition)) |>
+  distinct() |>
+  pivot_wider(
+    names_from = session,
+    values_from = planned_condition
+  ) |>
+  mutate(
+    order_group = case_when(
+      T1 == "fasted" ~ "fasted_first",
+      T1 == "satiated" ~ "satiated_first",
+      TRUE ~ NA_character_
+    ),
+    order_group = factor(order_group, levels = c("satiated_first", "fasted_first"))
+  )
+
+
+order_tbl |> count(order_group)
+
+```
+
+3.  Merge die Order Variable in dat_main Erwartung n_missing_order ist 0
+
+```{r}
+dat_main_order <- dat_main |>
+  left_join(order_tbl |> select(fastress_id, order_group), by = "fastress_id")
+
+# ============================================================
+# QC: Jede Person muss beide Conditions haben
+# ============================================================
+
+dat_main_order |>
+  group_by(fastress_id) |>
+  summarise(
+    n_sessions = n_distinct(session),
+    n_conditions = n_distinct(planned_condition),
+    .groups = "drop"
+  ) |>
+  count(n_sessions, n_conditions)
+
+# Erwartung: 
+# n_sessions = 2 -> Jede Person hat zwei Sessions
+# n_condiriona = 2 -> Jede Person hat einmal fasted und einmal satiated
+
+dat_main_order |>
+  summarise(
+    n_rows = n(),
+    n_ids = n_distinct(fastress_id),
+    n_missing_order = sum(is.na(order_group))
+  )
+
+dat_main_order |> count(order_group, session, planned_condition)
+
+```
+
+4.  Schneller deskriptiver Order Check Das ist kein Test, nur ein Blick ob es grob anders aussieht.
+
+```{r}
+dat_main_order |>
+  group_by(order_group, planned_condition) |>
+  summarise(
+    n_obs = n(),
+    n_ids = n_distinct(fastress_id),
+    total_kcal_M = mean(total_kcal, na.rm = TRUE),
+    total_kcal_SD = sd(total_kcal, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+```
+
+5.  Modelltest fuer Order Effekt Wir testen drei Modelle A Basismodell ohne Order B plus Order Haupteffekt C plus Interaktion planned_condition mal order_group Wenn C gegen B nicht besser wird, gibt es keinen Hinweis, dass der Condition Effekt von der Reihenfolge abhaengt.
+
+```{r}
+m_base <- lmer(
+  total_kcal ~ planned_condition + (1 | subject),
+  data = dat_main_order,
+  REML = FALSE
+)
+
+m_order_add <- lmer(
+  total_kcal ~ planned_condition + order_group + (1 | subject),
+  data = dat_main_order,
+  REML = FALSE
+)
+
+m_order_int <- lmer(
+  total_kcal ~ planned_condition * order_group + (1 | subject),
+  data = dat_main_order,
+  REML = FALSE
+)
+
+anova(m_base, m_order_add)
+anova(m_order_add, m_order_int)
+
+summary(m_order_int)
+confint(m_order_int, method = "Wald")
+
+```
+
+Interpretation Wenn anova(m_order_add, m_order_int) nicht signifikant ist Dann kein Hinweis auf Reihenfolge als Moderator des Condition Effekts Wenn anova(m_base, m_order_add) signifikant ist Dann gibt es einen generellen Unterschied zwischen fasted_first und satiated_first, unabhängig von Condition
+
+Satz für den Methodenteil oder Ergebnisteil Wenn nichts signifikant "Order effects were examined by adding an order factor indicating whether participants completed the fasted condition in the first session. No evidence for order dependent effects was observed."
+
+Wenn signifikant "Order effects were observed, indicating that outcomes differed depending on whether the fasted condition was completed first. Therefore, order was retained as a covariate in all primary models."
+
+## Manipulationcheck Stress
+
+```{r}
+# ============================================================
+# Manipulationcheck Stress: strong vs mild (paired, Personenebene)
+# ============================================================
+
+# Deskriptives
+stress_person |>
+  summarise(
+    n_persons = n(),
+    mild_M = mean(mild_mean_person, na.rm = TRUE),
+    mild_SD = sd(mild_mean_person, na.rm = TRUE),
+    strong_M = mean(strong_mean_person, na.rm = TRUE),
+    strong_SD = sd(strong_mean_person, na.rm = TRUE)
+  )
+
+# Paired t Test: strong > mild
+t.test(
+  stress_person$strong_mean_person,
+  stress_person$mild_mean_person,
+  paired = TRUE
+)
+
+```
+
+### Manipulationcheck Blutmarker
+
+```{r}
+# ============================================================
+# Manipulationcheck Blutmarker: fasted vs satiated (paired)
+# ============================================================
+
+blood_wide <- analysis_session |>
+  filter(fastress_id %in% ids_complete, !is.na(planned_condition)) |>
+  select(fastress_id, planned_condition, ketones_pre, glucose_pre) |>
+  pivot_wider(
+    names_from = planned_condition,
+    values_from = c(ketones_pre, glucose_pre)
+  )
+
+# QC
+blood_wide |>
+  summarise(
+    n_persons = n(),
+    n_ketones_paired = sum(!is.na(ketones_pre_fasted) & !is.na(ketones_pre_satiated)),
+    n_glucose_paired = sum(!is.na(glucose_pre_fasted) & !is.na(glucose_pre_satiated))
+  )
+
+# Werte robust zu numerisch konvertieren
+blood_wide <- blood_wide |>
+  mutate(
+    across(starts_with("ketones_pre"), ~ readr::parse_number(as.character(.x))),
+    across(starts_with("glucose_pre"), ~ readr::parse_number(as.character(.x)))
+  )
+
+# Paired t tests
+t.test(blood_wide$ketones_pre_fasted, blood_wide$ketones_pre_satiated, paired = TRUE)
+t.test(blood_wide$glucose_pre_fasted, blood_wide$glucose_pre_satiated, paired = TRUE)
+
+
+
+```
+
+```{r}
+# ============================================================
+# Moderator spezifische Samples
+# ============================================================
+
+dat_main_srs <- dat_main |> filter(!is.na(srs_c))
+dat_main_sses <- dat_main |> filter(!is.na(sses_c))
+dat_main_cerq_adaptive <- dat_main |> filter(!is.na(cerq_adaptive_c))
+dat_main_cerq_maladaptive <- dat_main |> filter(!is.na(cerq_maladaptive_c))
+dat_main_stadit <- dat_main |> filter(!is.na(stadit_c))
+dat_main_edeq <- dat_main |> filter(!is.na(edeq_restraint_c))
+
+# RQ2 Sample (kommt erst nach Stress Merge, aber Platzhalter ok)
+# dat_rq2 wird später erstellt
+
+# ============================================================
+# Dokumentation der Ns
+# ============================================================
+
+sample_n <- tibble(
+  sample = c(
+    "dat_main",
+    "dat_main_srs",
+    "dat_main_sses",
+    "dat_main_cerq_adaptive",
+    "dat_main_cerq_maladaptive",
+    "dat_main_stadit",
+    "dat_main_edeq"
+  ),
+  n_rows = c(
+    nrow(dat_main),
+    nrow(dat_main_srs),
+    nrow(dat_main_sses),
+    nrow(dat_main_cerq_adaptive),
+    nrow(dat_main_cerq_maladaptive),
+    nrow(dat_main_stadit),
+    nrow(dat_main_edeq)
+  ),
+  n_ids = c(
+    n_distinct(dat_main$fastress_id),
+    n_distinct(dat_main_srs$fastress_id),
+    n_distinct(dat_main_sses$fastress_id),
+    n_distinct(dat_main_cerq_adaptive$fastress_id),
+    n_distinct(dat_main_cerq_maladaptive$fastress_id),
+    n_distinct(dat_main_stadit$fastress_id),
+    n_distinct(dat_main_edeq$fastress_id)
+  )
+)
+
+sample_n
+
+```
+
+## Outcome Checks und Modellannahmen
+
+Was: Verteilungen der Outcomes anschauen, Nullen und Ausreisser prüfen, dann Residuenchecks für dein Basismodell.
+
+Wieso: Du willst früh sehen, ob zB total_kcal stark schief ist oder ob einzelne Sessions extrem sind. Das beeinflusst Sensitivitätstransformationen und die Interpretation.
+
+```{r}
+# ============================================================
+# Outcome checks (Verteilungen, Nullen, Ausreisser)
+# ============================================================
+
+# Outcomes, die du prüfen willst
+outcomes <- c("total_kcal", "high_kcal", "low_kcal", "prop_high_kcal")
+
+# 8.1 Anteil Nullen pro Outcome (nur Sessions mit Condition)
+dat_main |>
+  summarise(across(all_of(outcomes), ~mean(.x == 0, na.rm = TRUE), .names = "p_zero_{.col}"))
+
+# 8.2 Deskriptive Verteilung (Min, Median, Max, Quantile)
+dat_main |>
+  summarise(across(all_of(outcomes),
+                   list(
+                     n = ~sum(!is.na(.x)),
+                     min = ~min(.x, na.rm = TRUE),
+                     p25 = ~quantile(.x, 0.25, na.rm = TRUE),
+                     p50 = ~quantile(.x, 0.50, na.rm = TRUE),
+                     p75 = ~quantile(.x, 0.75, na.rm = TRUE),
+                     p95 = ~quantile(.x, 0.95, na.rm = TRUE),
+                     max = ~max(.x, na.rm = TRUE)
+                   ),
+                   .names = "{.col}_{.fn}"))
+
+# 8.3 Top Ausreisser Sessions anschauen (nach total_kcal)
+dat_main |>
+  arrange(desc(total_kcal)) |>
+  select(fastress_id, session, planned_condition, total_kcal, high_kcal, low_kcal, prop_high_kcal) |>
+  slice_head(n = 10)
+
+# 8.4 Quick Plots (optional, aber hilfreich)
+dat_main |>
+  ggplot(aes(x = total_kcal)) +
+  geom_histogram(bins = 20) +
+  facet_wrap(~planned_condition) +
+  labs(title = "total_kcal Verteilung nach Condition")
+
+dat_main |>
+  ggplot(aes(x = planned_condition, y = total_kcal)) +
+  geom_boxplot() +
+  labs(title = "total_kcal Boxplot nach Condition")
+
+```
+
+## Deskriptive Statistik nach Condition
+
+Was man macht? Man schaut sich die Outcomes (total_kcal, high_kcal, low_kcal, prop_high_kcal) nach planned condition an.
+
+Wieso man das macht? Das ist der erste Plausibilitätscheck fuer den Effekt Man sieht sofort, ob Wertebereiche plausibel sind Man bekommt Tabellen für den Ergebnisteil
+
+```{r}
+# --------------------------------------------------
+# Descriptives by planned condition
+# --------------------------------------------------
+
+#Alle Sessions: explorativer Überblick (nicht für Hypothesentests)
+analysis_session |>
+  filter(!is.na(planned_condition)) |>
+  group_by(planned_condition) |>
+  summarise(
+    n_obs = n(),
+    n_ids = n_distinct(fastress_id),
+    total_kcal_M = mean(total_kcal, na.rm = TRUE),
+    total_kcal_SD = sd(total_kcal, na.rm = TRUE),
+    high_kcal_M = mean(high_kcal, na.rm = TRUE),
+    high_kcal_SD = sd(high_kcal, na.rm = TRUE),
+    low_kcal_M = mean(low_kcal, na.rm = TRUE),
+    low_kcal_SD = sd(low_kcal, na.rm = TRUE),
+    prop_high_M = mean(prop_high_kcal, na.rm = TRUE),
+    prop_high_SD = sd(prop_high_kcal, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+
+# Haupttabelle: nur für complete cases:
+analysis_session |>
+  filter(fastress_id %in% ids_complete, !is.na(planned_condition)) |>
+  group_by(planned_condition) |>
+  summarise(
+    n_obs = n(),
+    n_ids = n_distinct(fastress_id),
+    total_kcal_M = mean(total_kcal, na.rm = TRUE),
+    total_kcal_SD = sd(total_kcal, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+```
+
+Alle Sessions: explorativer Überblick (nicht für Hypothesentests) Du beschreibst alle vorhandenen Sessions -\> Manche Personen tragen nur eine Session bei -\> Das ist ok für einen Ueberblick, aber: fasted und satiated Gruppen bestehen nicht aus denselben Personen Mittelwerte sind nicht direkt vergleichbar =\> dient als explorativer Überblick
+
+nur complete cases: Jede Person kommt genau einmal in fasted und einmal in satiated vor Die Mittelwerte sind within subject vergleichbar =\> designkonforme Beschreibung
+
+Satz für Methodenteil: "Primary analyses were conducted on participants with complete data for both experimental sessions, ensuring a within subject comparison of fasted and satiated conditions."
+
+## Random Effects prüfen
+
+Was: Du testest, ob neben random intercept auch random slope für planned_condition sinnvoll ist. Warum: In einem within subject Cross over Design reagieren Personen oft unterschiedlich stark auf fasted versus satiated. Das bildet random slope ab.
+
+```{r}
+# ============================================================
+# Modellstruktur: random intercept vs random slope
+# ============================================================
+
+# wenn N genügend gross, prüfen -> sonst weglassen
+
+# #m1_ri <- lmer(
+#   total_kcal ~ planned_condition + (1 | subject),
+#   data = dat_main,
+#   REML = FALSE
+# )
+# 
+# #m1_rs <- lmer(
+#   total_kcal ~ planned_condition + (1 + planned_condition || subject),
+#   data = dat_main,
+#   REML = FALSE
+# )
+
+#summary(m1_ri)
+#summary(m1_rs)
+
+#anova(m1_ri, m1_rs)
+
+# (1 | subject) als Standard setzen: 
+use_random_slope <- FALSE
+
+```
+
+## Modelle report ready machen
+
+Was: Du baust dir Hilfsfunktionen, die für jedes Outcome automatisch Modell, CI, Vergleich und Effektgrösse ausgeben. Warum: Du sparst dir Copy Paste Fehler und bekommst konsistente Outputs.
+
+```{r}
+# ============================================================
+# Funktionen: report ready Output fuer Mixed Models
+# ============================================================
+
+fit_main_effect <- function(dat, outcome, use_random_slope = FALSE) {
+
+  if (use_random_slope) {
+    f_m1 <- as.formula(paste0(outcome, " ~ planned_condition + (1 + planned_condition || subject)"))
+  } else {
+    f_m1 <- as.formula(paste0(outcome, " ~ planned_condition + (1 | subject)"))
+  }
+
+  f_m0 <- as.formula(paste0(outcome, " ~ 1 + (1 | subject)"))
+
+  m1 <- lmer(f_m1, data = dat, REML = FALSE)
+  m0 <- lmer(f_m0, data = dat, REML = FALSE)
+
+  list(m0 = m0, m1 = m1)
+}
+
+model_summary_pack <- function(m0, m1, dat, outcome) {
+
+  comp <- anova(m0, m1)
+  ci <- confint(m1, method = "Wald")
+
+  beta <- fixef(m1)
+  beta_cond <- beta[grep("^planned_condition", names(beta))][1]
+
+  sd_y <- dat |>
+    summarise(sd_y = sd(.data[[outcome]], na.rm = TRUE)) |>
+    pull(sd_y)
+
+  eff_sd <- beta_cond / sd_y
+
+  list(
+    comparison = comp,
+    fixed = summary(m1)$coefficients,
+    ci = ci,
+    eff_sd = eff_sd
+  )
+}
+
+```
+
+## Basismodell für alle Outcomes
+
+(Condition Effekt) Was man macht? Man rechnet das erste Mixed Model: Outcome wird durch planned condition vorhergesagt, mit Zufallsinterzept pro Person.
+
+Wieso man das macht? Das ist das Referenzmodell Es zeigt den generellen Unterschied fasted vs satiated Es ist die Grundlage für spätere Moderationen
+
+```{r}
+# ============================================================
+# Hauptanalyse: Condition Effekt für alle Outcomes
+# ============================================================
+
+results_main <- list()
+
+# ------------------------------------------------------------
+# 1) Outcome: total_kcal => RQ1, H1
+# ------------------------------------------------------------
+m0_total <- lmer(total_kcal ~ 1 + (1 | subject), data = dat_main, REML = FALSE)
+m1_total <- lmer(total_kcal ~ planned_condition + (1 | subject), data = dat_main, REML = FALSE)
+
+anova(m0_total, m1_total)
+
+results_main[["total_kcal"]] <- list(m0 = m0_total, m1 = m1_total)
+
+# ------------------------------------------------------------
+# 2) Outcome: high_kcal
+# ------------------------------------------------------------
+m0_high <- lmer(high_kcal ~ 1 + (1 | subject), data = dat_main, REML = FALSE)
+m1_high <- lmer(high_kcal ~ planned_condition + (1 | subject), data = dat_main, REML = FALSE)
+
+anova(m0_high, m1_high)
+summary(m1_high)
+confint(m1_high, method = "Wald")
+
+results_main[["high_kcal"]] <- list(m0 = m0_high, m1 = m1_high)
+
+# ------------------------------------------------------------
+# 3) Outcome: low_kcal
+# ------------------------------------------------------------
+m0_low <- lmer(low_kcal ~ 1 + (1 | subject), data = dat_main, REML = FALSE)
+m1_low <- lmer(low_kcal ~ planned_condition + (1 | subject), data = dat_main, REML = FALSE)
+
+anova(m0_low, m1_low)
+summary(m1_low)
+confint(m1_low, method = "Wald")
+
+results_main[["low_kcal"]] <- list(m0 = m0_low, m1 = m1_low)
+
+# ------------------------------------------------------------
+# 4) Outcome: prop_high_kcal
+# ------------------------------------------------------------
+m0_prop <- lmer(prop_high_kcal ~ 1 + (1 | subject), data = dat_main, REML = FALSE)
+m1_prop <- lmer(prop_high_kcal ~ planned_condition + (1 | subject), data = dat_main, REML = FALSE)
+
+anova(m0_prop, m1_prop)
+summary(m1_prop)
+confint(m1_prop, method = "Wald")
+
+results_main[["prop_high_kcal"]] <- list(m0 = m0_prop, m1 = m1_prop)
+
+
+```
+
+## Moderation
+
+Was: Du testest pro Moderator die Interaktion planned_condition mal Moderator. Warum: Das entspricht deinem Hypothesentest für Moderation, sauber vergleichbar über alle Moderatoren.
+
+```{r}
+# ============================================================
+# Moderationen Schritt fuer Schritt: total_kcal
+# ============================================================
+# ------------------------------------------------------------
+# Mini QC Funktion: wie viele vollständige Faelle hat ein Moderationssample
+# ------------------------------------------------------------
+qc_mod_sample <- function(dat, outcome, cond = "planned_condition", mod) {
+  dat |>
+    summarise(
+      n_rows = n(),
+      n_ids = n_distinct(fastress_id),
+      n_nonmiss_outcome = sum(!is.na(.data[[outcome]])),
+      n_nonmiss_cond = sum(!is.na(.data[[cond]])),
+      n_nonmiss_mod = sum(!is.na(.data[[mod]])),
+      n_complete_for_model = sum(!is.na(.data[[outcome]]) & !is.na(.data[[cond]]) & !is.na(.data[[mod]]))
+    )
+}
+
+# --------------------------------------------------
+# Guard: stop if no complete cases for the moderation model
+# --------------------------------------------------
+stop_if_no_cases <- function(qc_tbl) {
+  n_cc <- qc_tbl$n_complete_for_model[1]
+  if (is.na(n_cc) || n_cc == 0) {
+    stop("Keine vollstaendigen Faelle fuer dieses Moderationsmodell. Sample ist leer oder hat NAs.")
+  }
+}
+
+
+```
+
+### Moderation 1: SRS
+
+m_srs_add = Haupteffekt Condition plus Haupteffekt Moderator m_srs_int = plus Interaktion anova testet, ob die Interaktion Zusatzerklärung bringt
+
+```{r}
+# ------------------------------------------------------------
+# Moderation 1: SRS (srs_c)
+# Outcome: total_kcal
+# Sample: dat_main_srs
+# RQ2: H2
+# ------------------------------------------------------------
+
+qc_mod_sample(dat_main_srs, outcome = "total_kcal", mod = "srs_c")
+
+m_srs_add <- lmer(
+  total_kcal ~ planned_condition + srs_c + (1 | subject),
+  data = dat_main_srs,
+  REML = FALSE
+)
+
+m_srs_int <- lmer(
+  total_kcal ~ planned_condition * srs_c + (1 | subject),
+  data = dat_main_srs,
+  REML = FALSE
+)
+
+anova(m_srs_add, m_srs_int)
+summary(m_srs_int)
+confint(m_srs_int, method = "Wald")
+
+```
+
+### Moderation 2: CERQ
+
+Hinweis: CERQ auf 10 setzen
+
+```{r}
+# ------------------------------------------------------------
+# Moderation 2: CERQ (cerq_c)
+# Outcome: total_kcal
+# Sample: dat_main_cerq_adaptive
+#         dat_main_cerq_maladaptive
+# ------------------------------------------------------------
+
+# CERQ adaptive
+qc_mod_sample(dat_main_cerq_adaptive, outcome = "total_kcal", mod = "cerq_adaptive_c")
+
+m_cerq_adapt_add <- lmer(
+  total_kcal ~ planned_condition + cerq_adaptive_c + (1 | subject),
+  data = dat_main_cerq_adaptive,
+  REML = FALSE
+)
+
+m_cerq_adapt_int <- lmer(
+  total_kcal ~ planned_condition * cerq_adaptive_c + (1 | subject),
+  data = dat_main_cerq_adaptive,
+  REML = FALSE
+)
+
+anova(m_cerq_adapt_add, m_cerq_adapt_int)
+summary(m_cerq_adapt_int)
+confint(m_cerq_adapt_int, method = "Wald")
+
+
+# CERQ maladaptive
+qc_mod_sample(dat_main_cerq_maladaptive, outcome = "total_kcal", mod = "cerq_maladaptive_c")
+
+m_cerq_mal_add <- lmer(
+  total_kcal ~ planned_condition + cerq_maladaptive_c + (1 | subject),
+  data = dat_main_cerq_maladaptive,
+  REML = FALSE
+)
+
+m_cerq_mal_int <- lmer(
+  total_kcal ~ planned_condition * cerq_maladaptive_c + (1 | subject),
+  data = dat_main_cerq_maladaptive,
+  REML = FALSE
+)
+
+anova(m_cerq_mal_add, m_cerq_mal_int)
+summary(m_cerq_mal_int)
+confint(m_cerq_mal_int, method = "Wald")
+
+
+```
+
+### Moderation 3: STADI Trait Anxiety
+
+```{r}
+# ------------------------------------------------------------
+# Moderation 3: STADI Trait Anxiety (stadit_c)
+# Outcome: total_kcal & high_kcal
+# Sample: dat_main_stadit
+# ------------------------------------------------------------
+
+qc_mod_sample(dat_main_stadit, outcome = "total_kcal", mod = "stadit_c")
+
+m_stadit_add <- lmer(
+  total_kcal ~ planned_condition + stadit_c + (1 | subject),
+  data = dat_main_stadit,
+  REML = FALSE
+)
+
+m_stadit_int <- lmer(
+  total_kcal ~ planned_condition * stadit_c + (1 | subject),
+  data = dat_main_stadit,
+  REML = FALSE
+)
+
+anova(m_stadit_add, m_stadit_int)
+summary(m_stadit_int)
+confint(m_stadit_int, method = "Wald")
+
+# high_kcal
+m_stadit_high_add <- lmer(
+  high_kcal ~ planned_condition + stadit_c + (1 | subject),
+  data = dat_main_stadit,
+  REML = FALSE
+)
+
+m_stadit_high_int <- lmer(
+  high_kcal ~ planned_condition * stadit_c + (1 | subject),
+  data = dat_main_stadit,
+  REML = FALSE
+)
+
+anova(m_stadit_high_add, m_stadit_high_int)
+summary(m_stadit_high_int)
+confint(m_stadit_high_int, method = "Wald")
+
+
+```
+
+### Moderation 4: EDEQ & SSES
+
+```{r}
+# ------------------------------------------------------------
+# Moderation 4: EDEQ Restraint (edeq_restraint_c)
+# Outcome: total_kcal
+# Sample: dat_main_edeq
+# H5: 
+# ------------------------------------------------------------
+
+qc_mod_sample(dat_main_edeq, outcome = "total_kcal", mod = "edeq_restraint_c")
+
+m_edeq_add <- lmer(
+  total_kcal ~ planned_condition + edeq_restraint_c + (1 | subject),
+  data = dat_main_edeq,
+  REML = FALSE
+)
+
+m_edeq_int <- lmer(
+  total_kcal ~ planned_condition * edeq_restraint_c + (1 | subject),
+  data = dat_main_edeq,
+  REML = FALSE
+)
+
+anova(m_edeq_add, m_edeq_int)
+summary(m_edeq_int)
+confint(m_edeq_int, method = "Wald")
+
+# ------------------------------------------------------------
+# H5b: Stress Eating (SSES)
+# Outcome: total_kcal
+# Sample: dat_main_sses
+# ------------------------------------------------------------
+
+qc_mod_sample(dat_main_sses, outcome = "total_kcal", mod = "sses_c")
+
+m_sses_add <- lmer(
+  total_kcal ~ planned_condition + sses_c + (1 | subject),
+  data = dat_main_sses,
+  REML = FALSE
+)
+
+m_sses_int <- lmer(
+  total_kcal ~ planned_condition * sses_c + (1 | subject),
+  data = dat_main_sses,
+  REML = FALSE
+)
+
+anova(m_sses_add, m_sses_int)
+summary(m_sses_int)
+confint(m_sses_int, method = "Wald")
+
+
+
+
+```
+
+```{r}
+# ============================================================
+# Moderationsmodelle speichern
+# ============================================================
+
+results_mod_total <- list(
+  srs = list(add = m_srs_add, int = m_srs_int),
+  sses = list(add = m_sses_add, int = m_sses_int),
+
+  cerq_adapt = list(add = m_cerq_adapt_add, int = m_cerq_adapt_int),
+  cerq_mal   = list(add = m_cerq_mal_add,   int = m_cerq_mal_int),
+
+  stadit = list(add = m_stadit_add, int = m_stadit_int),
+  edeq   = list(add = m_edeq_add,   int = m_edeq_int)
+)
+
+
+```
+
+Moderationsergebnisse speicher: Du hast sofort alle p Werte der Interaktionen in einer Tabelle. -\> perfekt für Ergebnisteil und Appendix.
+
+```{r}
+# ============================================================
+# Tabelle: Moderations Test (add vs int) für total_kcal
+# ============================================================
+
+mod_tests_total <- tibble(
+  moderator = c("srs", "sses", "cerq_adapt", "cerq_mal", "stadit", "edeq"),
+  p_int = c(
+    anova(m_srs_add, m_srs_int)$`Pr(>Chisq)`[2],
+    anova(m_sses_add, m_sses_int)$`Pr(>Chisq)`[2],
+    anova(m_cerq_adapt_add, m_cerq_adapt_int)$`Pr(>Chisq)`[2],
+    anova(m_cerq_mal_add, m_cerq_mal_int)$`Pr(>Chisq)`[2],
+    anova(m_stadit_add, m_stadit_int)$`Pr(>Chisq)`[2],
+    anova(m_edeq_add, m_edeq_int)$`Pr(>Chisq)`[2]
+  )
+)
+
+mod_tests_total
+
+
+names(survey_all) |> str_subset("^cerq_cerq")
+
+```
+
+## Sensitivität: planned versus measured mismatch
+
+Was: Du testest Robustheit, indem du Sessions mit Mismatch ausschliesst. Warum: Du kannst zeigen, dass deine Hauptergebnisse nicht von Non Compliance getrieben sind. Vorbereitung: Du brauchst measured_condition im Session Datensatz. Du hast condition_check bereits gebaut, also merge es rein.
+
+```{r}
+# ============================================================
+# Sensitivität: measured_condition und mismatch Flag in analysis_session
+# ============================================================
+
+analysis_session2 <- analysis_session |>
+  left_join(
+    condition_check |>
+      select(fastress_id, session, measured_condition),
+    by = c("fastress_id", "session")
+  ) |>
+  mutate(
+    mismatch = !is.na(measured_condition) & !is.na(planned_condition) & (measured_condition != planned_condition)
+  )
+
+# Hauptsample neu bauen
+dat_main2 <- analysis_session2 |>
+  filter(
+    fastress_id %in% ids_complete,
+    !is.na(planned_condition),
+    !is.na(total_kcal)
+  )
+
+# Sensitivitaet Sample: ohne mismatch Sessions
+dat_main_nomismatch <- dat_main2 |>
+  filter(mismatch == FALSE | is.na(mismatch))
+
+# Vergleich Basismodell total_kcal
+mods_a <- fit_main_effect(dat = dat_main2, outcome = "total_kcal", use_random_slope = use_random_slope)
+mods_b <- fit_main_effect(dat = dat_main_nomismatch, outcome = "total_kcal", use_random_slope = use_random_slope)
+
+cat("\nMit allen Sessions:\n")
+print(model_summary_pack(mods_a$m0, mods_a$m1, dat_main2, "total_kcal")$fixed)
+
+cat("\nOhne mismatch Sessions:\n")
+print(model_summary_pack(mods_b$m0, mods_b$m1, dat_main_nomismatch, "total_kcal")$fixed)
+
+```
+
+Sensitivität: Schiefe Verteilung mit log1p Was: Du analysierst log1p(total_kcal) als Robustheitscheck. Warum: Essensdaten sind oft stark rechtsschief, log1p ist eine Standard Sensitivität.
+
+```{r}
+# ============================================================
+# Sensitivitaet: log1p Transformation
+# ============================================================
+
+dat_main_log <- dat_main |>
+  mutate(total_kcal_log1p = log1p(total_kcal))
+
+mods_log <- fit_main_effect(dat = dat_main_log, outcome = "total_kcal_log1p", use_random_slope = use_random_slope)
+pack_log <- model_summary_pack(mods_log$m0, mods_log$m1, dat_main_log, "total_kcal_log1p")
+
+pack_log$comparison
+pack_log$fixed
+pack_log$ci
+
+```
+
+Sensitivität: Ausreisser Regel a priori Was: Du markierst obere Extremwerte, zB ueber dem 99 Prozent Quantil, und rechnest das Modell ohne diese Sessions. Warum: Damit du spaeter nicht spontan entscheidest, sondern eine klare Regel hast.
+
+```{r}
+# ============================================================
+# Sensitivität: Ausreisser nach 99 Prozent Quantil
+# ============================================================
+
+q99 <- dat_main |>
+  summarise(q99 = quantile(total_kcal, 0.99, na.rm = TRUE)) |>
+  pull(q99)
+
+dat_main_trim <- dat_main |>
+  mutate(is_outlier99 = total_kcal > q99)
+
+dat_main_no_out <- dat_main_trim |>
+  filter(is_outlier99 == FALSE)
+
+mods_full <- fit_main_effect(dat = dat_main_trim, outcome = "total_kcal", use_random_slope = use_random_slope)
+mods_trim <- fit_main_effect(dat = dat_main_no_out, outcome = "total_kcal", use_random_slope = use_random_slope)
+
+cat("\nMit Ausreissern:\n")
+print(model_summary_pack(mods_full$m0, mods_full$m1, dat_main_trim, "total_kcal")$fixed)
+
+cat("\nOhne Ausreisser 99 Prozent Regel:\n")
+print(model_summary_pack(mods_trim$m0, mods_trim$m1, dat_main_no_out, "total_kcal")$fixed)
+
+```
+
+## Plots: Ergebnisse visuell report ready
+
+Was: Spaghetti Plot und Interaktions Plot. Warum: Das sind die zwei Plot Typen, die du in Resultaten und Anhang wirklich brauchst.
+
+```{r}
+# ============================================================
+# Plots: within subject Spaghetti Plot fuer total_kcal
+# ============================================================
+
+dat_main |>
+  ggplot(aes(x = planned_condition, y = total_kcal, group = subject)) +
+  geom_line(alpha = 0.4) +
+  geom_point() +
+  labs(title = "total_kcal pro Person nach Condition", x = "Condition", y = "total_kcal")
+
+
+# Interaktions Plot ohne Zusatzpakete, simpel ueber Vorhersagen aus dem Modell:
+# ============================================================
+# Plots: Interaktion planned_condition mal srs_c als Beispiel
+# ============================================================
+
+m_srs_int <- lmer(
+  total_kcal ~ planned_condition * srs_c + (1 | subject),
+  data = dat_main_srs,
+  REML = FALSE
+)
+
+# Grid fuer Vorhersagen
+srs_seq <- seq(
+  from = quantile(dat_main_srs$srs_c, 0.05, na.rm = TRUE),
+  to   = quantile(dat_main_srs$srs_c, 0.95, na.rm = TRUE),
+  length.out = 50
+)
+
+pred_grid <- expand.grid(
+  planned_condition = levels(dat_main_srs$planned_condition),
+  srs_c = srs_seq
+)
+
+pred_grid$pred <- predict(m_srs_int, newdata = pred_grid, re.form = NA)
+
+pred_grid |>
+  as_tibble() |>
+  ggplot(aes(x = srs_c, y = pred, linetype = planned_condition)) +
+  geom_line(linewidth = 1) +
+  labs(title = "Vorhersage total_kcal: Condition mal SRS", x = "srs_c", y = "predicted total_kcal")
+
+```
+
+## Basismodell Diagnostics
+
+Was: Residuen und Fits prüfen, Einflussreiche Punkte markieren. Wieso: Mixed Models sind relativ robust, aber du willst wissen, ob zB ein einzelner Fall den Effekt treibt.
+
+```{r}
+# ============================================================
+# Modellannahmen und Diagnostics fuer total_kcal (Hauptmodell)
+# ============================================================
+
+m_total <- results_main[["total_kcal"]]$m1
+
+# Residuen vs Fits
+plot(m_total, which = 1)
+
+# QQ Plot der Residuen
+qqnorm(resid(m_total))
+qqline(resid(m_total))
+
+diag_df <- dat_main |>
+  mutate(
+    fitted = fitted(m_total),
+    resid = resid(m_total),
+    resid_z = as.numeric(scale(resid))
+  ) |>
+  arrange(desc(abs(resid_z)))
+
+diag_df |>
+  select(fastress_id, session, planned_condition, total_kcal, fitted, resid, resid_z) |>
+  slice_head(n = 10)
+
+```
+
+## Basismodell Report Ready (CI, Modellvergleich, Effektgroesse)
+
+Was: Nullmodell vergleichen, Konfidenzintervall für Condition Effekt, grobe Effektgroesse berichten. Wieso: Das brauchst du spaeter 1 zu 1 im Ergebnisteil.
+
+```{r}
+# ============================================================
+# Basismodell report ready (total_kcal)
+# ============================================================
+
+# Nullmodell (nur Random Intercept)
+m0_total <- results_main[["total_kcal"]]$m0
+
+# Modellvergleich (Likelihood Ratio Test)
+m1_total <- results_main[["total_kcal"]]$m1
+anova(m0_total, m1_total)
+
+# Prozent CI fuer Fixed Effects
+confint(m1_total, method = "Wald")
+
+# Fixed Effects Tabelle kompakt
+summary(m1_total)
+
+# Effektgrösse: Condition Effekt in SD Einheiten (bezogen auf dat_main)
+sd_total <- dat_main |>
+  summarise(sd_total = sd(total_kcal, na.rm = TRUE)) |>
+  pull(sd_total)
+
+beta_cond <- fixef(m1_total)[grep("^planned_condition", names(fixef(m1_total)))][1]
+beta_cond / sd_total
+
+```
+
+# Export
+
+```{r}
+# # --------------------------------------------------
+# # Final sanity checks before export
+# # --------------------------------------------------
+# 
+# stopifnot(exists("dat_main"))
+# stopifnot(exists("results_main"))
+# stopifnot(exists("results_mod_total"))
+# stopifnot(nrow(dat_main) > 0)
+# 
+# 
+# # ============================================================
+# # Export: zentrale Outputs speichern
+# # ============================================================
+# 
+# dir.create("outputs", showWarnings = FALSE)
+# 
+# # Daten
+# saveRDS(analysis_session, "outputs/analysis_session.rds")
+# saveRDS(dat_main, "outputs/dat_main.rds")
+# write_csv(sample_n, "outputs/sample_n.csv")
+# 
+# # Modelle
+# saveRDS(results_main, "outputs/results_main.rds")
+# saveRDS(results_mod_total, "outputs/results_mod_total.rds")
+# 
+# # Tabellen
+# write_csv(mod_tests_total, "outputs/mod_tests_total.csv")
+# 
+# # Session Info
+# sink("outputs/session_info.txt")
+# sessionInfo()
+# sink()
+
+```
