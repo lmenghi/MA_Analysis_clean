@@ -800,6 +800,7 @@ survey_t1 |>
   filter(fastress_id %in% dup_ids_t1) |>
   select(fastress_id, id, submitdate, startdate, datestamp) |>
   arrange(fastress_id, submitdate)
+
 ```
 
 sub-002 kommt zweimal vor -\> beide sind T1 -\> den erst ausgefüllten behalten
@@ -867,6 +868,39 @@ survey_all |>
   count(fastress_id, session) |>
   filter(n > 1)
 
+```
+
+## Hunger ratings
+
+```{r}
+# ============================================================
+# Extract session-specific hunger rating (T1/T2)
+# ============================================================
+names(survey_t1) |> 
+  stringr::str_subset(regex("hunger", ignore_case = TRUE))
+
+names(survey_t2) |> 
+  stringr::str_subset(regex("hunger", ignore_case = TRUE))
+
+hunger_t1 <- survey_t1 |>
+  select(fastress_id, session, hunger_hunger)
+
+hunger_t2 <- survey_t2 |>
+  select(fastress_id, session, hunger_hunger)
+
+hunger_long <- bind_rows(hunger_t1, hunger_t2)
+
+# QC
+hunger_long |>
+  summarise(
+    n_rows = n(),
+    n_ids = n_distinct(fastress_id),
+    n_nonmiss_hunger = sum(!is.na(hunger_hunger))
+  )
+
+hunger_long |>
+  count(fastress_id, session) |>
+  filter(n > 1)
 ```
 
 ### Survey scoring: Trait Moderatoren aus Survey T1 und T2
@@ -1539,6 +1573,10 @@ analysis_session <- food_session_raw_kcal |>
         ketones_post,
         glucose_post
       ),
+    by = c("fastress_id", "session")
+  ) |>
+  left_join(
+    hunger_long,
     by = c("fastress_id", "session")
   )
 
