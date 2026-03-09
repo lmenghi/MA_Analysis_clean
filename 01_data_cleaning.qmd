@@ -206,6 +206,7 @@ strong_cols <- names(stress_all_complete) |>
 
 stress_all_complete <- stress_all_complete |>
   mutate(
+    stress_baseline_general = parse_num(stress_baseline_general),
     across(all_of(c(mild_cols, strong_cols)), parse_num)
   )
 
@@ -229,8 +230,11 @@ stress_indices_per_session <- stress_all_complete |>
   transmute(
     fastress_id,
     session,
+    baseline_mean = stress_baseline_general,
     mild_mean   = rowMeans(X_mild, na.rm = TRUE),
     strong_mean = rowMeans(X_strong, na.rm = TRUE),
+    delta_mild_baseline = mild_mean - baseline_mean,
+    delta_strong_baseline = strong_mean - baseline_mean,
     delta_strong_mild = strong_mean - mild_mean
   )
 
@@ -239,18 +243,16 @@ stress_indices_per_session <- stress_all_complete |>
 stress_person <- stress_indices_per_session |>
   group_by(fastress_id) |>
   summarise(
+    baseline_mean_person = mean(baseline_mean, na.rm = TRUE),
     mild_mean_person   = mean(mild_mean, na.rm = TRUE),
     strong_mean_person = mean(strong_mean, na.rm = TRUE),
     .groups = "drop"
   ) |>
-  filter(!is.na(mild_mean_person),
-         !is.na(strong_mean_person))
-
-
-# 7) Save for analysis file
-
-saveRDS(stress_indices_per_session, "data_clean/stress_indices_per_session.rds")
-saveRDS(stress_person, "data_clean/stress_person.rds")
+  filter(
+    !is.na(baseline_mean_person),
+    !is.na(mild_mean_person),
+    !is.na(strong_mean_person)
+  )
 
 ```
 
@@ -375,6 +377,71 @@ Merksatz für MA Methoden: „Food intake data were reshaped into long format to
 2.  Food Daten von wide zu long umformatieren (\$ sagt:Muster muss am Ende des Strings stehen.)
 3.  kontrollieren, ob das Format stimmt (also ob ich jetzt columns habe)
 4.  konsumierte Gramm berechnen
+
+### Überprüfung Stückzahl 
+
+"In addition to pre and post weights, the number of pieces per food item was inspected as a plausibility check. Piece counts before and after the task were consistent with the weight-based intake calculations, and no implausible values were identified."
+
+```{r}
+# ============================================================
+# Food intake processing: piece counts for QC
+# ============================================================
+
+food_long_pcs <- food_all |>
+  pivot_longer(
+    cols = ends_with(c("_pcs_pre", "_pcs_post")),
+    names_to = "variable",
+    values_to = "pieces"
+  ) |>
+  mutate(
+    pieces = parse_num(pieces),
+    phase = if_else(str_detect(variable, "_pcs_pre$"), "pre", "post"),
+    item  = str_remove(variable, "_pcs_(pre|post)$")
+  ) |>
+  select(fastress_id, session, item, phase, pieces) |>
+  pivot_wider(
+    names_from = phase,
+    values_from = pieces
+  ) |>
+  mutate(
+    pre = parse_num(pre),
+    post = parse_num(post),
+    consumed_pcs = pre - post,
+    flag_negative_pcs = consumed_pcs < 0,
+    flag_post_gt_pre_pcs = if_else(!is.na(pre) & !is.na(post), post > pre, NA)
+  )
+
+food_long_pcs |>
+  count(item)
+
+# QC: Missingness und unplausible Werte bei Stückzahlen
+food_long_pcs |>
+  summarise(
+    n_pre_na = sum(is.na(pre)),
+    n_post_na = sum(is.na(post)),
+    n_negative_pcs = sum(flag_negative_pcs, na.rm = TRUE),
+    n_post_gt_pre_pcs = sum(flag_post_gt_pre_pcs, na.rm = TRUE)
+  )
+
+# Sollte leer sein
+food_long_pcs |>
+  filter(flag_negative_pcs == TRUE | flag_post_gt_pre_pcs == TRUE) |>
+  select(fastress_id, session, item, pre, post, consumed_pcs)
+
+
+# QC: post = 0 bei Stückzahl bedeutet vollständige Konsumation
+food_long_pcs |>
+  summarise(
+    n_post_zero = sum(post == 0, na.rm = TRUE),
+    n_post_zero_with_pre = sum(post == 0 & !is.na(pre), na.rm = TRUE),
+    n_post_zero_consumed_equals_pre = sum(post == 0 & !is.na(pre) & consumed_pcs == pre, na.rm = TRUE)
+  )
+
+# Sollte leer sein
+food_long_pcs |>
+  filter(post == 0, !is.na(pre), consumed_pcs != pre) |>
+  select(fastress_id, session, item, pre, post, consumed_pcs)
+```
 
 ### Pausibility Check
 
@@ -1428,6 +1495,23 @@ food_long_raw |>
   mutate(post_gt_pre = if_else(!is.na(pre) & !is.na(post), post > pre, NA)) |>
   count(post_gt_pre)
 
+# ============================================================
+# Food QC: prüfen, ob post = 0 als vollständige Konsumation erkannt wird
+# ============================================================
+
+food_long_raw |>
+  summarise(
+    n_post_zero = sum(post == 0, na.rm = TRUE),
+    n_post_zero_with_pre = sum(post == 0 & !is.na(pre), na.rm = TRUE),
+    n_post_zero_consumed_equals_pre = sum(post == 0 & !is.na(pre) & consumed_g == pre, na.rm = TRUE)
+  )
+
+# Einzelne Fälle mit post = 0 anschauen
+food_long_raw |>
+  filter(post == 0) |>
+  select(fastress_id, session, item, pre, post, consumed_g, consumed_g_clean) |>
+  arrange(item, fastress_id, session)
+
 # Show Missingness
 food_long_raw |>
   summarise(
@@ -1815,8 +1899,9 @@ cat("Cleaning file rendered at:", Sys.time(), "\n")
 dir.create("data_clean", showWarnings = FALSE)
 
 saveRDS(analysis_session, "data_clean/analysis_session.rds")
-saveRDS(survey_person, "data_clean/survey_person.rds")
 saveRDS(condition_check, "data_clean/condition_check.rds")
+saveRDS(stress_indices_per_session, "data_clean/stress_indices_per_session.rds")
+saveRDS(stress_person, "data_clean/stress_person.rds")
 
 
 ```

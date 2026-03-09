@@ -13,11 +13,13 @@ library(tibble)
 library(ggplot2)
 library(lme4)
 library(lmerTest)
+library(readr)
 
 analysis_session <- readRDS("data_clean/analysis_session.rds")
 survey_person <- readRDS("data_clean/survey_person.rds")
 condition_check <- readRDS("data_clean/condition_check.rds")
 stress_person <- readRDS("data_clean/stress_person.rds")
+stress_indices_per_session <- readRDS("data_clean/stress_indices_per_session.rds")
 
 
 
@@ -260,10 +262,10 @@ dat_main_order |>
 
 5.  Modelltest für Order Effekt.
 
-    Wir testen drei Modelle \
-    A Basismodell ohne Order \
-    B plus Order Haupteffekt \
-    C plus Interaktion planned_condition mal order_group \
+    Wir testen drei Modelle\
+    A Basismodell ohne Order\
+    B plus Order Haupteffekt\
+    C plus Interaktion planned_condition mal order_group\
     –\> Wenn C gegen B nicht besser wird, gibt es keinen Hinweis, dass der Condition Effekt von der Reihenfolge abhaengt.
 
 ```{r}
@@ -293,7 +295,7 @@ confint(m_order_int, method = "Wald")
 
 ```
 
-**Interpretation \
+**Interpretation\
 **Wenn anova(m_order_add, m_order_int) nicht signifikant ist –\> dann kein Hinweis auf Reihenfolge als Moderator des Condition Effekts
 
 Wenn anova(m_base, m_order_add) signifikant ist –\> dann gibt es einen generellen Unterschied zwischen fasted_first und satiated_first, unabhängig von Condition
@@ -302,27 +304,93 @@ Satz für den Methodenteil oder Ergebnisteil Wenn nichts signifikant "Order effe
 
 Wenn signifikant "Order effects were observed, indicating that outcomes differed depending on whether the fasted condition was completed first. Therefore, order was retained as a covariate in all primary models."
 
+```{r}
+# ============================================================
+# Helper function: Voraussetzungen gepaarter t Tests
+# ============================================================
+
+check_paired_t <- function(x, y, label = "difference") {
+  d <- x - y
+  d <- d[!is.na(d)]
+
+  cat("\n-----------------------------\n")
+  cat("Check:", label, "\n")
+  cat("-----------------------------\n")
+
+  print(summary(d))
+  cat("\nShapiro Wilk Test:\n")
+  print(shapiro.test(d))
+
+  boxplot(d, main = paste("Differenzwerte:", label))
+  qqnorm(d, main = paste("QQ Plot:", label))
+  qqline(d)
+}
+```
+
 ## Manipulationcheck Stress
+
+#### Voraussetzungen paired t-test prüfen
+
+Interpretation
+
+-   Wenn QQ-Plot okay aussieht und keine extremen Ausreisser auffallen: t-Test beibehalten
+
+-   Wenn die Differenzen sehr schief oder stark ausreisseranfällig sind: Wilcoxon Signed Rank Test -\> zusätzlich als Sensitivitätscheck berichten
 
 ```{r}
 # ============================================================
-# Manipulationcheck Stress: strong vs mild (paired, Personenebene)
+# Manipulationcheck Stress: baseline, mild, strong (Session-Level)
 # ============================================================
 
-# Deskriptives
-stress_person |>
-  summarise(
-    n_persons = n(),
-    mild_M = mean(mild_mean_person, na.rm = TRUE),
-    mild_SD = sd(mild_mean_person, na.rm = TRUE),
-    strong_M = mean(strong_mean_person, na.rm = TRUE),
-    strong_SD = sd(strong_mean_person, na.rm = TRUE)
+# Nur vollständige Sessions mit allen drei Stresswerten
+stress_check_session <- stress_indices_per_session |>
+  filter(
+    !is.na(baseline_mean),
+    !is.na(mild_mean),
+    !is.na(strong_mean)
   )
 
-# Paired t Test: strong > mild
+# QC
+stress_check_session |>
+  summarise(
+    n_sessions = n(),
+    n_ids = n_distinct(fastress_id)
+  )
+
+# Deskriptive Werte
+stress_check_session |>
+  summarise(
+    n_sessions = n(),
+    n_ids = n_distinct(fastress_id),
+    baseline_M = mean(baseline_mean, na.rm = TRUE),
+    baseline_SD = sd(baseline_mean, na.rm = TRUE),
+    mild_M = mean(mild_mean, na.rm = TRUE),
+    mild_SD = sd(mild_mean, na.rm = TRUE),
+    strong_M = mean(strong_mean, na.rm = TRUE),
+    strong_SD = sd(strong_mean, na.rm = TRUE)
+  )
+
+# Voraussetzungen prüfen: Differenzwerte
+check_paired_t(stress_check_session$mild_mean, stress_check_session$baseline_mean, "Stress mild - baseline")
+check_paired_t(stress_check_session$strong_mean, stress_check_session$baseline_mean, "Stress strong - baseline")
+check_paired_t(stress_check_session$strong_mean, stress_check_session$mild_mean, "Stress strong - mild")
+
+# Gepaarte t-Tests
 t.test(
-  stress_person$strong_mean_person,
-  stress_person$mild_mean_person,
+  stress_check_session$mild_mean,
+  stress_check_session$baseline_mean,
+  paired = TRUE
+)
+
+t.test(
+  stress_check_session$strong_mean,
+  stress_check_session$baseline_mean,
+  paired = TRUE
+)
+
+t.test(
+  stress_check_session$strong_mean,
+  stress_check_session$mild_mean,
   paired = TRUE
 )
 
@@ -358,11 +426,13 @@ blood_wide <- blood_wide |>
     across(starts_with("glucose_pre"), ~ readr::parse_number(as.character(.x)))
   )
 
+# Voraussetzungen prüfen
+check_paired_t(blood_wide$ketones_pre_fasted, blood_wide$ketones_pre_satiated, "Ketones fasted - satiated")
+check_paired_t(blood_wide$glucose_pre_fasted, blood_wide$glucose_pre_satiated, "Glucose fasted - satiated")
+
 # Paired t tests
 t.test(blood_wide$ketones_pre_fasted, blood_wide$ketones_pre_satiated, paired = TRUE)
 t.test(blood_wide$glucose_pre_fasted, blood_wide$glucose_pre_satiated, paired = TRUE)
-
-
 
 ```
 
@@ -401,8 +471,13 @@ hunger_wide |>
     satiated_SD = sd(satiated, na.rm = TRUE)
   )
 
+# Voraussetzungen prüfen
+check_paired_t(hunger_wide$fasted, hunger_wide$satiated, "Hunger fasted - satiated")
+
 # Paired t test
 t.test(hunger_wide$fasted, hunger_wide$satiated, paired = TRUE)
+
+
 ```
 
 ## Moderator-spezifische Samples
@@ -450,7 +525,7 @@ sample_n <- tibble(
     nrow(dat_main_edeq)
   ),
   n_ids = c(
-    n_distinct(dat_main$fastress_id),
+    n_distinct(dat_main_final$fastress_id),
     n_distinct(dat_main_srs$fastress_id),
     n_distinct(dat_main_sses$fastress_id),
     n_distinct(dat_main_cerq_adaptive$fastress_id),
@@ -1052,7 +1127,7 @@ mod_tests_total
 
 **Warum:** So kann man zeigen, dass die Hauptergebnisse nicht von Non Compliance getrieben sind.
 
-**Vorbereitung:** Man braucht measured_condition im Session Datensatz. \
+**Vorbereitung:** Man braucht measured_condition im Session Datensatz.\
 -\> condition_check ist bereits gebaut, also muss man es reinmergen.
 
 ```{r}
@@ -1185,12 +1260,12 @@ dat_main_final |>
 # ============================================================
 
 m_srs_int <- lmer(
-  total_kcal ~ planned_condition * srs_c + (1 | subject),
+  total_kcal ~ planned_condition * srs_c + order_group + (1 | subject),
   data = dat_main_srs,
   REML = FALSE
 )
 
-# Grid fuer Vorhersagen
+# Grid für Vorhersagen
 srs_seq <- seq(
   from = quantile(dat_main_srs$srs_c, 0.05, na.rm = TRUE),
   to   = quantile(dat_main_srs$srs_c, 0.95, na.rm = TRUE),
@@ -1200,7 +1275,12 @@ srs_seq <- seq(
 pred_grid <- expand.grid(
   planned_condition = levels(dat_main_srs$planned_condition),
   srs_c = srs_seq,
-  order_group = "satiated_first"
+  order_group = levels(dat_main_srs$order_group)[1]
+)
+
+pred_grid$order_group <- factor(
+  pred_grid$order_group,
+  levels = levels(dat_main_srs$order_group)
 )
 
 pred_grid$pred <- predict(m_srs_int, newdata = pred_grid, re.form = NA)
@@ -1209,7 +1289,11 @@ pred_grid |>
   as_tibble() |>
   ggplot(aes(x = srs_c, y = pred, linetype = planned_condition)) +
   geom_line(linewidth = 1) +
-  labs(title = "Vorhersage total_kcal: Condition mal SRS", x = "srs_c", y = "predicted total_kcal")
+  labs(
+    title = "Vorhersage total_kcal: Condition mal SRS",
+    x = "srs_c",
+    y = "predicted total_kcal"
+  )
 
 ```
 
