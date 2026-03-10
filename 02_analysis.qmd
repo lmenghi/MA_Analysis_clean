@@ -327,6 +327,52 @@ check_paired_t <- function(x, y, label = "difference") {
 }
 ```
 
+## Demografie Analyse-Sample
+
+```{r}
+# ============================================================
+# Demografie: Analyse-Sample (dat_main_final)
+# ============================================================
+
+# Eine Zeile pro Person im finalen Analyse-Sample
+demo_analysis <- dat_main_final |>
+  arrange(fastress_id, session) |>
+  group_by(fastress_id) |>
+  summarise(
+    age = first(age),
+    sex = first(sex_male_m_female_f),
+    education = first(giq10education),
+    .groups = "drop"
+  )
+
+# Gesamt N
+N_total <- nrow(demo_analysis)
+
+# Alter
+age_M  <- mean(demo_analysis$age, na.rm = TRUE)
+age_SD <- sd(demo_analysis$age, na.rm = TRUE)
+age_min <- min(demo_analysis$age, na.rm = TRUE)
+age_max <- max(demo_analysis$age, na.rm = TRUE)
+
+# Geschlecht
+gender_tab <- demo_analysis |>
+  count(sex) |>
+  mutate(percent = round(n / N_total * 100, 1))
+
+# Bildung
+edu_tab <- demo_analysis |>
+  count(education) |>
+  mutate(percent = round(n / N_total * 100, 1))
+
+N_total
+age_M
+age_SD
+age_min
+age_max
+gender_tab
+edu_tab
+```
+
 ## Manipulationcheck Stress
 
 #### Voraussetzungen paired t-test prüfen
@@ -1402,4 +1448,9 @@ beta_cond / sd_total
 # sessionInfo()
 # sink()
 
+```
+
+```{r}
+blood_condition_full |>
+  count(support_class)
 ```
