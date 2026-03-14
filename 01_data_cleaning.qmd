@@ -378,7 +378,7 @@ Merksatz für MA Methoden: „Food intake data were reshaped into long format to
 3.  kontrollieren, ob das Format stimmt (also ob ich jetzt columns habe)
 4.  konsumierte Gramm berechnen
 
-### Überprüfung Stückzahl 
+### Überprüfung Stückzahl
 
 "In addition to pre and post weights, the number of pieces per food item was inspected as a plausibility check. Piece counts before and after the task were consistent with the weight-based intake calculations, and no implausible values were identified."
 
@@ -1478,6 +1478,14 @@ blood_person |> count(sex_male_m_female_f)
 ## Outcome Variablen für Food final bauen: kcal und High vs Low
 
 folgender Code berechnet: total_kcal high_kcal low_kcal prop_high_kcal
+
+-   `total_kcal` → gesamte Energieaufnahme
+
+-   `high_kcal` → Energie aus hochkalorischen Snacks
+
+-   `low_kcal` → Energie aus niedrigkalorischen Snacks
+
+-   `prop_high_kcal` → Anteil hochkalorischer Energie (Präferenzverschiebung unter Stress)
 
 ```{r}
 # --------------------------------------------------

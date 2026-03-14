@@ -1171,7 +1171,7 @@ mod_tests_total
 
 **Was:** Robustheit testen, indem man Sessions mit Mismatch ausschliesst.
 
-**Warum:** So kann man zeigen, dass die Hauptergebnisse nicht von Non Compliance getrieben sind.
+**Warum:** So kann man zeigen, dass die Hauptergebnisse nicht von Non Compliance getrieben sind. Wenn ich nur die metabolisch stimmigen Sessions betrachte, bleibt der Haupteffekt trotzdem bestehen?
 
 **Vorbereitung:** Man braucht measured_condition im Session Datensatz.\
 -\> condition_check ist bereits gebaut, also muss man es reinmergen.
@@ -1229,7 +1229,15 @@ print(model_summary_pack(mods_b$m0, mods_b$m1, dat_main_nomismatch, "total_kcal"
 
 **Sensitivität:** Schiefe Verteilung mit log1p
 
-**Was:** log1p(total_kcal) als Robustheitscheck analysiere.
+Die Log Transformation macht typischerweise:
+
+-   grosse Werte weniger dominant
+
+-   die Verteilung symmetrischer
+
+-   Residuen oft etwas sauberer
+
+**Was:** log1p(total_kcal) als Robustheitscheck analysiere. Bleibt mein Haupteffekt bestehen, wenn ich die Schiefe der Outcome-Verteilung statistisch abmildere?
 
 **Warum:** Essensdaten sind oft stark rechtsschief, log1p ist eine Standard Sensitivität.
 
