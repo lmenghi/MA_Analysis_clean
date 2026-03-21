@@ -1,6 +1,21 @@
 ---
 title: "FASTRESS 02 Analysis"
-format: html
+format: 
+  # uncomment below to transform into html presentation/document. other options: - powerpoint "pptx:" or - pdf document "pdf:" 
+  # revealjs:
+  #   slide-number: true
+  #   theme: default   # simple, default, dark
+  html:
+    code-fold: true
+    embed-resources: true # makes html self contained, including images etc.
+    footer: "Project name"
+    number-sections: true
+    number-depth: 4
+    toc: true
+    toc-depth: 3
+    toc-expand: 3
+    toc-location: left
+    toc-title: Contents
 editor: visual
 ---
 
