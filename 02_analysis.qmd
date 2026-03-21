@@ -19,6 +19,10 @@ format:
 editor: visual
 ---
 
+# Preparation
+
+## Load packages and analysis datasets
+
 ```{r}
 
 library(dplyr)
@@ -36,7 +40,8 @@ condition_check <- readRDS("data_clean/condition_check.rds")
 stress_person <- readRDS("data_clean/stress_person.rds")
 stress_indices_per_session <- readRDS("data_clean/stress_indices_per_session.rds")
 
-
+blood_person <- readRDS("data_clean/blood_person.rds")
+education_person <- readRDS("data_clean/education_person.rds")
 
 ```
 
@@ -46,6 +51,8 @@ Im Cleaning File wurde erstellt: `subject = factor(fastress_id)`.
 
 -   Zusätzlich prüfen, ob subject wirklich ein Faktor ist
 
+## Verify imported analysis objects
+
 ```{r}
 stopifnot("subject" %in% names(analysis_session))
 stopifnot(is.factor(analysis_session$subject))
@@ -53,7 +60,9 @@ stopifnot("planned_condition" %in% names(analysis_session))
 
 ```
 
-# Übersicht (Datenstruktur & Analyse-Samples)
+# Analysis sample setup
+
+## Overview of datasets and analysis samples
 
 **analysis_session**\
 Session-Level Datensatz mit einer Zeile pro Person und Session. Zentrale Basis aller Analysen.
@@ -82,7 +91,7 @@ Varianten von dat_main_final zur Prüfung der Robustheit, zB ohne Mismatch-Sessi
 **blood_wide**\
 Wide-Format Datensatz für gepaarte Tests der Blutmarker.Analysis
 
-## Analyse Stichproben definieren und dokumentieren
+## Define complete case sample
 
 **Was man macht?** Man berechnet, wie viele Personen für welche Analyse zur Verfügung stehen: within Subject Analysen brauchen zwei Sessions pro Person Moderation braucht zusätzlich Moderatorwerte
 
@@ -108,7 +117,7 @@ ids_complete <- analysis_session |>
 
 ```
 
-## feste Analyse Samples definieren
+## Create fixed analysis samples
 
 **Was:** fixe Datensätze erstellen, die ich danach konsequent in allen Modellen verwende.
 
@@ -132,7 +141,7 @@ dat_main |> count(fastress_id, name = "n_rows_per_id") |> count(n_rows_per_id)
 
 ```
 
-## Stichprobenbeschreibung: Analyse Samples
+## Describe analysis samples
 
 ```{r}
 # ============================================================
@@ -169,7 +178,9 @@ dat_main |>
 
 ```
 
-## Carryover / Order Check
+# Order and carryover checks
+
+## Inspect session order structure
 
 Prüfen, ob die Reihenfolge der Bedingungen relevant ist:
 
@@ -180,6 +191,8 @@ Prüfen, ob die Reihenfolge der Bedingungen relevant ist:
 -   ob Order die Wirkung von `planned_condition` moderiert
 
 1.  prüfen, ob gleiches Sample wie Haupanalyse. Erwartung: Jede Person hat 2 Zeilen Einmal T1 und einmal T2 Und planned_condition ist nicht NA
+
+## Verify crossover structure
 
 ```{r}
 dat_main |>
@@ -193,6 +206,8 @@ dat_main |>
 ```
 
 2.  Baue eine Order Variable pro Person Definition: fasted_first bedeutet T1 ist fasted satiated_first bedeutet T1 ist satiated
+
+## Create order variable
 
 ```{r}
 order_tbl <- dat_main |>
@@ -218,6 +233,8 @@ order_tbl |> count(order_group)
 ```
 
 3.  Merge die Order Variable in dat_main Erwartung n_missing_order ist 0
+
+## Merge order variable into the main sample
 
 ```{r}
 dat_main_order <- dat_main |>
@@ -260,6 +277,8 @@ dat_main_final <- dat_main_order
 
 ```
 
+## Descriptive order check
+
 4.  Schneller deskriptiver Order Check —\> Das ist kein Test, nur ein Blick ob es grob anders aussieht.
 
 ```{r}
@@ -274,6 +293,8 @@ dat_main_order |>
   )
 
 ```
+
+## Test order effects statistically
 
 5.  Modelltest für Order Effekt.
 
@@ -319,6 +340,10 @@ Satz für den Methodenteil oder Ergebnisteil Wenn nichts signifikant "Order effe
 
 Wenn signifikant "Order effects were observed, indicating that outcomes differed depending on whether the fasted condition was completed first. Therefore, order was retained as a covariate in all primary models."
 
+# Helper functions
+
+## Assumption checks for paired t tests
+
 ```{r}
 # ============================================================
 # Helper function: Voraussetzungen gepaarter t Tests
@@ -342,36 +367,40 @@ check_paired_t <- function(x, y, label = "difference") {
 }
 ```
 
-## Demografie Analyse-Sample
+# Sample characteristics
+
+## Demographic characteristics of the final analysis sample
 
 ```{r}
 # ============================================================
 # Demografie: Analyse-Sample (dat_main_final)
 # ============================================================
 
-# Eine Zeile pro Person im finalen Analyse-Sample
 demo_analysis <- dat_main_final |>
-  arrange(fastress_id, session) |>
-  group_by(fastress_id) |>
-  summarise(
-    age = first(age),
-    sex = first(sex_male_m_female_f),
-    education = first(giq10education),
-    .groups = "drop"
+  distinct(fastress_id) |>
+  left_join(
+    blood_person |>
+      select(fastress_id, age, sex_male_m_female_f),
+    by = "fastress_id"
+  ) |>
+  left_join(
+    education_person |>
+      select(fastress_id, education),
+    by = "fastress_id"
   )
 
 # Gesamt N
 N_total <- nrow(demo_analysis)
 
 # Alter
-age_M  <- mean(demo_analysis$age, na.rm = TRUE)
-age_SD <- sd(demo_analysis$age, na.rm = TRUE)
+age_M   <- mean(demo_analysis$age, na.rm = TRUE)
+age_SD  <- sd(demo_analysis$age, na.rm = TRUE)
 age_min <- min(demo_analysis$age, na.rm = TRUE)
 age_max <- max(demo_analysis$age, na.rm = TRUE)
 
 # Geschlecht
 gender_tab <- demo_analysis |>
-  count(sex) |>
+  count(sex_male_m_female_f) |>
   mutate(percent = round(n / N_total * 100, 1))
 
 # Bildung
@@ -388,7 +417,9 @@ gender_tab
 edu_tab
 ```
 
-## Manipulationcheck Stress
+# Manipulation checks
+
+## Subjective stress ratings
 
 #### Voraussetzungen paired t-test prüfen
 
@@ -457,7 +488,7 @@ t.test(
 
 ```
 
-### Manipulationcheck Blutmarker
+## Blood markers
 
 ```{r}
 # ============================================================
@@ -497,7 +528,7 @@ t.test(blood_wide$glucose_pre_fasted, blood_wide$glucose_pre_satiated, paired = 
 
 ```
 
-### Manipulationcheck Hunger
+## Hunger ratings
 
 ```{r}
 # ============================================================
@@ -541,7 +572,9 @@ t.test(hunger_wide$fasted, hunger_wide$satiated, paired = TRUE)
 
 ```
 
-## Moderator-spezifische Samples
+# Moderator-specific samples
+
+## Create moderator-specific datasets
 
 **Was?** Für jeden Moderator einen eigenen Analyse-Datensatz erstellen
 
@@ -562,6 +595,11 @@ dat_main_edeq <- dat_main_final |> filter(!is.na(edeq_restraint_c))
 # RQ2 Sample (kommt erst nach Stress Merge, aber Platzhalter ok)
 # dat_rq2 wird später erstellt
 
+```
+
+## Document sample sizes for moderator analyses
+
+```{r}
 # ============================================================
 # Dokumentation der Ns
 # ============================================================
@@ -597,10 +635,11 @@ sample_n <- tibble(
 )
 
 sample_n
-
 ```
 
-## Outcome Checks und Modellannahmen
+# Preliminary outcome checks
+
+## Inspect outcome distributions and potential outliers
 
 **Was:**
 
@@ -661,7 +700,7 @@ dat_main_final |>
 **Interpretation**: Es gibt Variabilität, aber nicht sofort etwas absurd Unplausibles.\
 Die Range ist breit, aber bei Snackintake in einem Laborparadigma noch nicht automatisch problematisch.
 
-## Deskriptive Statistik nach Condition
+## Descriptive statistics by condition
 
 **Was man macht?** Man schaut sich die Outcomes (total_kcal, high_kcal, low_kcal, prop_high_kcal) nach planned condition an.
 
@@ -713,7 +752,9 @@ analysis_session |>
 
 Satz für Methodenteil: "Primary analyses were conducted on participants with complete data for both experimental sessions, ensuring a within subject comparison of fasted and satiated conditions."
 
-## Random Effects prüfen
+# Model specification
+
+## Evaluate random intercept versus random slope structure
 
 **Was:** Testen, ob neben random intercept auch random slope für planned_condition sinnvoll ist.
 
@@ -766,7 +807,7 @@ use_random_slope <- FALSE
 
 ```
 
-## Modelle report ready machen
+## Define reporting functions for mixed models
 
 **Was:** Hilfsfunktionen bauen, die für jedes Outcome automatisch Modell, CI, Vergleich und Effektgrösse ausgeben.
 
@@ -822,7 +863,9 @@ model_summary_pack <- function(m0, m1, dat, outcome) {
 
 ```
 
-## Basismodell für alle Outcomes
+# Main analyses
+
+## Test condition effects across outcomes
 
 (Condition Effekt) **Was man macht?** Man rechnet das erste Mixed Model: Outcome wird durch planned condition vorhergesagt, mit Zufallsinterzept pro Person.
 
@@ -889,7 +932,9 @@ results_main[["prop_high_kcal"]] <- list(m0 = m0_prop, m1 = m1_prop)
 
 ```
 
-## Moderation
+# Moderation analyses
+
+## Define moderation helper functions
 
 **Was:** pro Moderator die Interaktion planned_condition mal Moderator testen.
 
@@ -1117,6 +1162,8 @@ confint(m_sses_int, method = "Wald")
 
 ```
 
+## Store moderation models
+
 ```{r}
 # ============================================================
 # Moderationsmodelle speichern
@@ -1137,6 +1184,8 @@ results_mod_total <- list(
 ```
 
 Moderationsergebnisse speichern: alle p Werte der Interaktionen in einer Tabelle. -\> perfekt für Ergebnisteil und Appendix.
+
+## Summarise moderation test results
 
 ```{r}
 # ============================================================
@@ -1160,7 +1209,7 @@ mod_tests_total
 
 ```
 
-## FDR für explorative Moderatoren vorbereiten
+## Apply false discovery rate correction
 
 **Erklärung**: Dann sieht man später direkt:
 
@@ -1182,7 +1231,9 @@ mod_tests_total <- mod_tests_total |>
 mod_tests_total
 ```
 
-## Sensitivität: planned versus measured mismatch
+# Sensitivity analyses
+
+## Exclude sessions with planned versus measured mismatch
 
 **Was:** Robustheit testen, indem man Sessions mit Mismatch ausschliesst.
 
@@ -1242,7 +1293,7 @@ print(model_summary_pack(mods_b$m0, mods_b$m1, dat_main_nomismatch, "total_kcal"
 
 ```
 
-**Sensitivität:** Schiefe Verteilung mit log1p
+## Reanalyse using log transformed total energy intake
 
 Die Log Transformation macht typischerweise:
 
@@ -1273,7 +1324,7 @@ pack_log$ci
 
 ```
 
-**Sensitivität:** Ausreisser Regel a priori
+## Reanalyse excluding extreme values
 
 **Was:** Obere Extremwerte markieren, zB über dem 99 Prozent Quantil, und das Modell ohne diese Sessions rechnen.
 
@@ -1305,7 +1356,9 @@ print(model_summary_pack(mods_trim$m0, mods_trim$m1, dat_main_no_out, "total_kca
 
 ```
 
-## Plots: Ergebnisse visuell report ready
+# Visualisation and model diagnostics
+
+## Plot individual trajectories and predicted interactions
 
 **Was:** Spaghetti Plot und Interaktions Plot.
 
@@ -1366,7 +1419,7 @@ pred_grid |>
 
 ```
 
-## Basismodell Diagnostics
+## Inspect model diagnostics for the primary outcome
 
 **Was:** Residuen und Fits prüfen, Einflussreiche Punkte markieren.
 
@@ -1400,7 +1453,7 @@ diag_df |>
 
 ```
 
-## Basismodell Report Ready (CI, Modellvergleich, Effektgroesse)
+## Extract report-ready results for the primary model
 
 **Was:** Nullmodell vergleichen, Konfidenzintervall für Condition Effekt, grobe Effektgroesse berichten.
 
@@ -1435,6 +1488,8 @@ beta_cond / sd_total
 ```
 
 # Export
+
+## Save final outputs
 
 ```{r}
 # # --------------------------------------------------
@@ -1471,9 +1526,4 @@ beta_cond / sd_total
 # sessionInfo()
 # sink()
 
-```
-
-```{r}
-blood_condition_full |>
-  count(support_class)
 ```

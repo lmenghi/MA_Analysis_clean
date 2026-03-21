@@ -23,6 +23,8 @@ editor: visual
 
 # Preparation
 
+## Load packages and helper functions
+
 ```{r}
 # #install.packages("readr")      # schnelles, robustes Einlesen von csv Dateien
 # #install.packages("readxl")     # Einlesen von xlsx Dateien
@@ -60,6 +62,8 @@ parse_num <- function(x) {
 
 
 ```
+
+## Read raw data
 
 Read data Ich importiere jede Datei einzeln, mache die Spalten maschinenlesbar und erzeuge explizit eine Session Variable, damit ich später sauber zwischen Messzeitpunkt und Bedingung unterscheiden kann.
 
@@ -106,6 +110,8 @@ food_t1 |> select(fastress_id) |> slice_head(n = 10)
 
 
 ```
+
+## Initial ID cleaning and validity checks
 
 Leere Zeilen entfernen: Zeilen ohne ID entfernen Erwartung jetzt: n_rows = 17 n_id_na = 0 n_unique_id = 17
 
@@ -167,9 +173,11 @@ stress_t2 |> count(fastress_id) |> filter(n > 1)
 
 Alle Zeilen sind leer -\> Struktur stimmt! Satz für Masterarbeit: "It has been verified that there is exactly one observation per person and session."
 
-## Manipulation check: Stress ratings
+# Stress manipulation check
 
-stress_all = T1 und T2 untereinander danach checkst man: gibt es Duplikate pro Person pro Session? haben Personen 1 oder 2 Sessions?
+## Build combined stress dataset
+
+stress_all = T1 und T2 untereinander danach checkt man: gibt es Duplikate pro Person pro Session? haben Personen 1 oder 2 Sessions?
 
 ```{r}
 # --------------------------------------------------
@@ -186,6 +194,12 @@ stress_all |>
     n_sessions = n_distinct(session)
   )
 
+
+```
+
+## Verify one row per person and session
+
+```{r}
 # Check: one row per person x session (should be empty)
 stress_all |>
   count(fastress_id, session) |>
@@ -196,14 +210,13 @@ stress_all |>
   distinct(fastress_id, session) |>
   count(fastress_id) |>
   count(n)
-
 ```
 
 Manipulation check: Goal: show Strong \> Mild (and optionally Strong \> Baseline) Uses complete cases across sessions (participants with T1 and T2), but does NOT split the test by session.
 
 ```{r}
 
-# 1) Keep participants with data in BOTH sessions (stable paired sample)
+# Keep participants with data in BOTH sessions (stable paired sample)
 stress_ids_complete <- stress_all |>
   distinct(fastress_id, session) |>
   count(fastress_id, name = "n_sessions") |>
@@ -213,7 +226,7 @@ stress_ids_complete <- stress_all |>
 stress_all_complete <- stress_all |>
   filter(fastress_id %in% stress_ids_complete)
 
-# 2) Identify mild and strong stress rating columns (robust pattern, case insensitive)
+# Identify mild and strong stress rating columns (robust pattern, case insensitive)
 
 mild_cols <- names(stress_all_complete) |>
   stringr::str_subset("(?i)mild")
@@ -231,8 +244,13 @@ stress_all_complete <- stress_all_complete |>
 stopifnot(length(mild_cols) > 0)
 stopifnot(length(strong_cols) > 0)
 
+```
 
-# 4) Compute indices per person x session
+## Compute stress indices
+
+```{r}
+
+# Compute indices per person x session
 X_mild <- stress_all_complete |>
   select(all_of(mild_cols)) |>
   mutate(across(everything(), as.numeric)) |>
@@ -255,7 +273,12 @@ stress_indices_per_session <- stress_all_complete |>
     delta_strong_mild = strong_mean - mild_mean
   )
 
-# 4) Aggregate to person level (mean across sessions)
+```
+
+## Aggregate stress ratings to person level
+
+```{r}
+# Aggregate to person level (mean across sessions)
 
 stress_person <- stress_indices_per_session |>
   group_by(fastress_id) |>
@@ -270,14 +293,13 @@ stress_person <- stress_indices_per_session |>
     !is.na(mild_mean_person),
     !is.na(strong_mean_person)
   )
-
 ```
 
 Für den Methodenteil: "A manipulation check was conducted to verify the effectiveness of the stress induction. Subjective stress ratings were assessed during baseline, mild, and strong stress conditions. Mean stress ratings were computed across multiple task runs. For the manipulation check, stress ratings during strong stress conditions were compared to mild stress conditions and baseline ratings."
 
-# Data preparation
+# Food data preparation
 
-1.  Food Dateien zusammenführen
+## Combine food files
 
 ```{r}
 # --------------------------------------------------
@@ -293,6 +315,8 @@ food_all |>
   count(n)
 
 ```
+
+## Reshape food data to long format
 
 ```{r}
 # ============================================================
@@ -336,6 +360,23 @@ food_long_raw |>
 # Plausibility check
 food_long_raw |> count(flag_negative)
 
+
+```
+
+beides: raw & complete, ohne Daten zu verlieren
+
+Long format bedeutet: eine Zeile = eine Beobachtungseinheit Statt viele Messungen in vielen Spalten zu haben, stehen sie untereinander in wenigen Spalten. ein Item -\> zu einem Zeitpunkt -\> für eine Person
+
+Merksatz für MA Methoden: „Food intake data were reshaped into long format to compute item level consumption before aggregation to the session level.“
+
+1.  Spaltennamen der Food Items prüfen
+2.  Food Daten von wide zu long umformatieren (\$ sagt:Muster muss am Ende des Strings stehen.)
+3.  kontrollieren, ob das Format stimmt (also ob ich jetzt columns habe)
+4.  konsumierte Gramm berechnen
+
+## Compute gram intake
+
+```{r}
 
 food_session_raw <- food_long_raw |>
   group_by(fastress_id, session) |>
@@ -381,21 +422,9 @@ food_ids_complete <- food_all |>
 
 food_session_complete <- food_session_raw |>
   filter(fastress_id %in% food_ids_complete)
-
 ```
 
-beides: raw & complete, ohne Daten zu verlieren
-
-Long format bedeutet: eine Zeile = eine Beobachtungseinheit Statt viele Messungen in vielen Spalten zu haben, stehen sie untereinander in wenigen Spalten. ein Item -\> zu einem Zeitpunkt -\> für eine Person
-
-Merksatz für MA Methoden: „Food intake data were reshaped into long format to compute item level consumption before aggregation to the session level.“
-
-1.  Spaltennamen der Food Items prüfen
-2.  Food Daten von wide zu long umformatieren (\$ sagt:Muster muss am Ende des Strings stehen.)
-3.  kontrollieren, ob das Format stimmt (also ob ich jetzt columns habe)
-4.  konsumierte Gramm berechnen
-
-### Überprüfung Stückzahl
+## Inspect piece counts
 
 "In addition to pre and post weights, the number of pieces per food item was inspected as a plausibility check. Piece counts before and after the task were consistent with the weight-based intake calculations, and no implausible values were identified."
 
@@ -466,9 +495,11 @@ food_long_pcs |>
 
 Interpretation: xx Zeilen -\> 0 davon haben einen negativen Kennwert -\> kein Item ist unplausibel - Consumed_g = Rohwert - Consumed_g_clean = bereinigter Wert (negative = NA) -\> keine negativen Werte vorhanden, deshlab -\> clean = raw
 
-## Import additional datasets: Blood Sampling
+# Blood data preparation
 
 In addition to food intake and stress ratings, questionnaire data and blood sampling data were imported to enable manipulation checks and the computation of psychological moderator variables.
+
+## Import blood and anthropometric data
 
 ```{r}
 
@@ -552,9 +583,7 @@ blood_all |>
 
 ```
 
-### Metabolic manipulation check (blood markers)
-
-#### Define metabolic condition per session (fasted vs satiated)
+## Define metabolic condition
 
 Jede Person × Session bekommt eine eindeutige Bedingung: -\> fasted -\> satiated Unabhängig von Session-Reihenfolge, da diese randomisiert war
 
@@ -632,7 +661,7 @@ planned_condition: eine Tabelle mit der randomisierten Condition, also dem, was 
 
 Satz für Methodenteil: “Metabolic condition was coded at the session level based on blood glucose and ketone concentrations measured before and after the MRI session. Sessions were classified as fasted or satiated if at least one blood marker per session fell within the predefined range for the respective metabolic state.”
 
-### Randomisierungs-Check
+## Compare planned and measured condition (Randomisierungs-Check)
 
 prüfen, ob fasted vs satiated ungefähr gleich oft in T1 vs T2 vorkommt.
 
@@ -653,6 +682,8 @@ planned_condition |>
 ```
 
 "Metabolic manipulation was verified based on blood glucose and ketones before and after the session. A session was considered biologically consistent with the planned condition if at least one marker supported the condition within predefined ranges. In the case of conflicting markers, the planned condition was used as the decision rule. Sessions without support from any marker were marked as unclear."
+
+## Describe blood markers by condition
 
 ```{r}
 # ============================================================
@@ -728,7 +759,7 @@ blood_condition_full |>
 
 ### Manipulation Check Condition and Blood
 
-Ziel: Überpruefen, ob die geplante Condition (Randomisierung) mit der biologischen Klassifikation (Blutwerte) übereinstimmt.
+Ziel: Überprüfen, ob die geplante Condition (Randomisierung) mit der biologischen Klassifikation (Blutwerte) übereinstimmt.
 
 ```{r}
 # ============================================================
@@ -817,9 +848,9 @@ blood_all |>
 
 ```
 
-# Import additional datasets: Questioinnaire
+# Survey data preparation
 
-### Import questionnaire data (T1/T2) and create FASTRESS ID from numeric SUB
+## Import questionnaire data
 
 ```{r}
 
@@ -865,6 +896,12 @@ survey_t1 |> count(fastress_id) |> filter(n > 1)
 survey_t2 |> count(fastress_id) |> filter(n > 1)
 
 survey_t1 |> distinct(fastress_id) |> slice_head(n = 10)
+
+```
+
+## Remove duplicate submissions
+
+```{r}
 
 # --------------------------------------------------
 # Identify duplicate participant in survey T1
@@ -916,6 +953,8 @@ survey_t1 |> count(fastress_id) |> filter(n > 1)
 
 ```
 
+## Combine survey files
+
 **Nächster Schritt:** Survey T1 und T2 zusammenführen Zuerst Spalten zu gleichen Types machen. Type: Text (character): Text kann alles darstellen (Zahl, Wort, leer) -\> man verliert keine Information
 
 ```{r}
@@ -954,7 +993,7 @@ survey_all |>
 
 ```
 
-## Hunger ratings
+## Extract hunger ratings
 
 ```{r}
 # ============================================================
@@ -987,7 +1026,7 @@ hunger_long |>
   filter(n > 1)
 ```
 
-### Survey scoring: Trait Moderatoren aus Survey T1 und T2
+## Survey scoring: Trait Moderatoren aus Survey T1 und T2
 
 ```{r}
 # ============================================================
@@ -1243,7 +1282,9 @@ names(survey_scales_session)
 
 ```
 
-### Stichprobenbeschreibung: Bildung und Geschlecht:
+# Sample description
+
+## Education and sex
 
 ```{r}
 # ============================================================
@@ -1353,7 +1394,7 @@ table1_sample
 
 Ziel dieses Abschnitts: Wissen, wer in welchen Datensätzen vorkommt, bevor man irgendwas mergt oder Analysen macht.
 
-Es sind mehrere Datensaetze: Nicht jede Person hat alles vollständig. --\> Deshalb muss man zuerst strukturieren, welche Personen in welchen Daten vorhanden sind.
+Es sind mehrere Datensätze: Nicht jede Person hat alles vollständig. --\> Deshalb muss man zuerst strukturieren, welche Personen in welchen Daten vorhanden sind.
 
 ```{r}
 # --------------------------------------------------
@@ -1387,7 +1428,9 @@ list(
 
 ```
 
-## Überschneidung ansehen -\> wichtig: Wer ist in welchem Datensatz?
+## Dataset overlap 
+
+-\> wichtig: Wer ist in welchem Datensatz?
 
 ```{r}
 # --------------------------------------------------
@@ -1430,7 +1473,7 @@ TRUE FALSE TRUE = Food + Survey, aber kein Blood
 
 ==\> wichtig für Ergebnisteil
 
-# Stichprobenbeschreibung
+## Descriptives
 
 Gesamtstichprobe (alle mit mindestens einer gültigen Session) Analysestichprobe (nur complete cases für Within Subject Modelle)
 
@@ -1458,7 +1501,7 @@ ids_overview |>
 
 ```
 
-## Demografische Variablen
+## Demographic descriptives
 
 ```{r}
 # ============================================================
@@ -1492,7 +1535,11 @@ blood_person |> count(sex_male_m_female_f)
 
 ```
 
-## Outcome Variablen für Food final bauen: kcal und High vs Low
+# Build analysis dataset
+
+## Merge session level variables
+
+### Outcome Variablen für Food final bauen: kcal und High vs Low
 
 folgender Code berechnet: total_kcal high_kcal low_kcal prop_high_kcal
 
@@ -1728,7 +1775,9 @@ analysis_session |>
   filter(n > 1)
 ```
 
-## Merge Trait Moderatoren in analysis_session + Zentrierung
+## Merge Trait Moderatoren 
+
+-\> in analysis_session + Zentrierung
 
 ```{r}
 # ============================================================
@@ -1885,7 +1934,7 @@ paired_summary <- analysis_session |>
 paired_summary
 ```
 
-## Define Sample
+## Define analysis samples
 
 ```{r}
 # ============================================================
@@ -1927,6 +1976,8 @@ saveRDS(analysis_session, "data_clean/analysis_session.rds")
 saveRDS(condition_check, "data_clean/condition_check.rds")
 saveRDS(stress_indices_per_session, "data_clean/stress_indices_per_session.rds")
 saveRDS(stress_person, "data_clean/stress_person.rds")
-
+saveRDS(survey_person, "data_clean/survey_person.rds")
+saveRDS(blood_person, "data_clean/blood_person.rds")
+saveRDS(education_person, "data_clean/education_person.rds")
 
 ```
