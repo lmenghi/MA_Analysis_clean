@@ -2261,7 +2261,7 @@ vertical-align: -.125em;
   <ul class="collapse">
   <li><a href="#education-and-sex" id="toc-education-and-sex" class="nav-link" data-scroll-target="#education-and-sex"><span class="header-section-number">6.1</span> Education and sex</a></li>
   <li><a href="#sample-overview-and-id-matching" id="toc-sample-overview-and-id-matching" class="nav-link" data-scroll-target="#sample-overview-and-id-matching"><span class="header-section-number">6.2</span> Sample overview and ID matching</a></li>
-  <li><a href="#dataset-overlap---wichtig-wer-ist-in-welchem-datensatz" id="toc-dataset-overlap---wichtig-wer-ist-in-welchem-datensatz" class="nav-link" data-scroll-target="#dataset-overlap---wichtig-wer-ist-in-welchem-datensatz"><span class="header-section-number">6.3</span> Dataset overlap -&gt; wichtig: Wer ist in welchem Datensatz?</a></li>
+  <li><a href="#dataset-overlap" id="toc-dataset-overlap" class="nav-link" data-scroll-target="#dataset-overlap"><span class="header-section-number">6.3</span> Dataset overlap</a></li>
   <li><a href="#descriptives" id="toc-descriptives" class="nav-link" data-scroll-target="#descriptives"><span class="header-section-number">6.4</span> Descriptives</a></li>
   <li><a href="#demographic-descriptives" id="toc-demographic-descriptives" class="nav-link" data-scroll-target="#demographic-descriptives"><span class="header-section-number">6.5</span> Demographic descriptives</a></li>
   </ul></li>
@@ -2273,7 +2273,7 @@ vertical-align: -.125em;
   <li><a href="#merge-qc" id="toc-merge-qc" class="nav-link" data-scroll-target="#merge-qc"><span class="header-section-number">7.1.2</span> Merge QC:</a></li>
   <li><a href="#check-nach-dem-join-von-planned_condition-und-blood_all" id="toc-check-nach-dem-join-von-planned_condition-und-blood_all" class="nav-link" data-scroll-target="#check-nach-dem-join-von-planned_condition-und-blood_all"><span class="header-section-number">7.1.3</span> Check nach dem Join von planned_condition und blood_all</a></li>
   </ul></li>
-  <li><a href="#merge-trait-moderatoren-in-analysis_session-zentrierung" id="toc-merge-trait-moderatoren-in-analysis_session-zentrierung" class="nav-link" data-scroll-target="#merge-trait-moderatoren-in-analysis_session-zentrierung"><span class="header-section-number">7.2</span> Merge Trait Moderatoren in analysis_session + Zentrierung</a>
+  <li><a href="#merge-trait-moderatoren" id="toc-merge-trait-moderatoren" class="nav-link" data-scroll-target="#merge-trait-moderatoren"><span class="header-section-number">7.2</span> Merge Trait Moderatoren</a>
   <ul class="collapse">
   <li><a href="#check-for-row-inflation-after-joining-survey-traits" id="toc-check-for-row-inflation-after-joining-survey-traits" class="nav-link" data-scroll-target="#check-for-row-inflation-after-joining-survey-traits"><span class="header-section-number">7.2.1</span> Check for row inflation after joining survey traits</a></li>
   </ul></li>
@@ -4433,8 +4433,9 @@ $survey
 </details>
 </div>
 </section>
-<section id="dataset-overlap---wichtig-wer-ist-in-welchem-datensatz" class="level2" data-number="6.3">
-<h2 data-number="6.3" class="anchored" data-anchor-id="dataset-overlap---wichtig-wer-ist-in-welchem-datensatz"><span class="header-section-number">6.3</span> Dataset overlap -&gt; wichtig: Wer ist in welchem Datensatz?</h2>
+<section id="dataset-overlap" class="level2" data-number="6.3">
+<h2 data-number="6.3" class="anchored" data-anchor-id="dataset-overlap"><span class="header-section-number">6.3</span> Dataset overlap</h2>
+<p>-&gt; wichtig: Wer ist in welchem Datensatz?</p>
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
@@ -4960,8 +4961,9 @@ TRUE FALSE TRUE = Food + Survey, aber kein Blood</p>
 </div>
 </section>
 </section>
-<section id="merge-trait-moderatoren-in-analysis_session-zentrierung" class="level2" data-number="7.2">
-<h2 data-number="7.2" class="anchored" data-anchor-id="merge-trait-moderatoren-in-analysis_session-zentrierung"><span class="header-section-number">7.2</span> Merge Trait Moderatoren in analysis_session + Zentrierung</h2>
+<section id="merge-trait-moderatoren" class="level2" data-number="7.2">
+<h2 data-number="7.2" class="anchored" data-anchor-id="merge-trait-moderatoren"><span class="header-section-number">7.2</span> Merge Trait Moderatoren</h2>
+<p>-&gt; in analysis_session + Zentrierung</p>
 <div class="cell">
 <details class="code-fold">
 <summary>Code</summary>
@@ -5259,7 +5261,7 @@ TRUE FALSE TRUE = Food + Survey, aber kein Blood</p>
 <span id="cb248-5"><a href="#cb248-5" aria-hidden="true" tabindex="-1"></a><span class="fu">cat</span>(<span class="st">&quot;Cleaning file rendered at:&quot;</span>, <span class="fu">Sys.time</span>(), <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 <div class="cell-output cell-output-stdout">
-<pre><code>Cleaning file rendered at: 1774099132 </code></pre>
+<pre><code>Cleaning file rendered at: 1774178632 </code></pre>
 </div>
 <details class="code-fold">
 <summary>Code</summary>
@@ -5268,7 +5270,10 @@ TRUE FALSE TRUE = Food + Survey, aber kein Blood</p>
 <span id="cb250-3"><a href="#cb250-3" aria-hidden="true" tabindex="-1"></a><span class="fu">saveRDS</span>(analysis_session, <span class="st">&quot;data_clean/analysis_session.rds&quot;</span>)</span>
 <span id="cb250-4"><a href="#cb250-4" aria-hidden="true" tabindex="-1"></a><span class="fu">saveRDS</span>(condition_check, <span class="st">&quot;data_clean/condition_check.rds&quot;</span>)</span>
 <span id="cb250-5"><a href="#cb250-5" aria-hidden="true" tabindex="-1"></a><span class="fu">saveRDS</span>(stress_indices_per_session, <span class="st">&quot;data_clean/stress_indices_per_session.rds&quot;</span>)</span>
-<span id="cb250-6"><a href="#cb250-6" aria-hidden="true" tabindex="-1"></a><span class="fu">saveRDS</span>(stress_person, <span class="st">&quot;data_clean/stress_person.rds&quot;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
+<span id="cb250-6"><a href="#cb250-6" aria-hidden="true" tabindex="-1"></a><span class="fu">saveRDS</span>(stress_person, <span class="st">&quot;data_clean/stress_person.rds&quot;</span>)</span>
+<span id="cb250-7"><a href="#cb250-7" aria-hidden="true" tabindex="-1"></a><span class="fu">saveRDS</span>(survey_person, <span class="st">&quot;data_clean/survey_person.rds&quot;</span>)</span>
+<span id="cb250-8"><a href="#cb250-8" aria-hidden="true" tabindex="-1"></a><span class="fu">saveRDS</span>(blood_person, <span class="st">&quot;data_clean/blood_person.rds&quot;</span>)</span>
+<span id="cb250-9"><a href="#cb250-9" aria-hidden="true" tabindex="-1"></a><span class="fu">saveRDS</span>(education_person, <span class="st">&quot;data_clean/education_person.rds&quot;</span>)</span></code></pre></div><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></div>
 </details>
 </div>
 </section>
