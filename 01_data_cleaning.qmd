@@ -1966,4 +1966,18 @@ analysis_paired_sample |>
 ```{r}
 # ============================================================
 # Save cleaned datasets for analysis
-# ===========================
+# ============================================================
+
+cat("Cleaning file rendered at:", Sys.time(), "\n")
+
+dir.create("data_clean", showWarnings = FALSE)
+
+saveRDS(analysis_session, "data_clean/analysis_session.rds")
+saveRDS(condition_check, "data_clean/condition_check.rds")
+saveRDS(stress_indices_per_session, "data_clean/stress_indices_per_session.rds")
+saveRDS(stress_person, "data_clean/stress_person.rds")
+saveRDS(survey_person, "data_clean/survey_person.rds")
+saveRDS(blood_person, "data_clean/blood_person.rds")
+saveRDS(education_person, "data_clean/education_person.rds")
+
+```

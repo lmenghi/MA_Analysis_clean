@@ -1493,4 +1493,37 @@ beta_cond / sd_total
 
 ```{r}
 # # --------------------------------------------------
-# # Final sanity checks before
+# # Final sanity checks before export
+# # --------------------------------------------------
+# 
+# stopifnot(exists("dat_main"))
+# stopifnot(exists("results_main"))
+# stopifnot(exists("results_mod_total"))
+# stopifnot(nrow(dat_main) > 0)
+# 
+# 
+# # ============================================================
+# # Export: zentrale Outputs speichern
+# # ============================================================
+# 
+# dir.create("outputs", showWarnings = FALSE)
+# 
+# # Daten
+# saveRDS(analysis_session, "outputs/analysis_session.rds")
+# saveRDS(dat_main, "outputs/dat_main.rds")
+# saveRDS(dat_main_final, "outputs/dat_main_final.rds")
+# write_csv(sample_n, "outputs/sample_n.csv")
+# 
+# # Modelle
+# saveRDS(results_main, "outputs/results_main.rds")
+# saveRDS(results_mod_total, "outputs/results_mod_total.rds")
+# 
+# # Tabellen
+# write_csv(mod_tests_total, "outputs/mod_tests_total.csv")
+# 
+# # Session Info
+# sink("outputs/session_info.txt")
+# sessionInfo()
+# sink()
+
+```
