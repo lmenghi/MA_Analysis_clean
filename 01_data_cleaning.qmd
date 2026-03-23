@@ -39,6 +39,8 @@ editor: visual
 # install.packages("lme4")       # lineare gemischte Modelle
 # install.packages("lmerTest")   # p Werte und Tests fuer lmer Modelle
 
+options(scipen = 999)
+
 library(readr)      # schnelles, robustes Einlesen von csv Dateien
 library(readxl)     # Einlesen von xlsx Dateien
 library(dplyr)      # Datenmanipulation
@@ -110,8 +112,6 @@ food_t1 |> select(fastress_id) |> slice_head(n = 10)
 ```
 
 ## Initial ID cleaning and validity checks
-
-does the following in a single step: removes NA, removes empty IDs, removes sample individuals, removes anything that does not match the actual ID format
 
 ```{r}
 
@@ -596,10 +596,6 @@ blood_condition |> count(session, condition)
 
 
 ```
-
-blood_condition: a table with one row per person and session, containing the biologically verified condition.
-
-count(condition) shows how many sessions were classified as “fasted” or “satiated” count(session, condition) shows how this is distributed across T1 and T2 (should not be 100% tied to a specific session in the case of randomization)
 
 ### Planned condition (Randomisierung)
 

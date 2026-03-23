@@ -24,6 +24,7 @@ editor: visual
 ## Load packages and analysis datasets
 
 ```{r}
+options(scipen = 999)
 
 library(dplyr)
 library(tidyr)
@@ -247,12 +248,10 @@ dat_main_order |> count(order_group, session, planned_condition)
 # ============================================================
 # Finaler Hauptdatensatz für Hauptanalysen
 # ============================================================
-# Auch wenn der Ordereffekt nicht signifikant war, ist es bei einem Cross-over Design sauberer, ihn als Kovariate kontrolliert mitzunehmen.
 
 dat_main_final <- dat_main_order
 
-# = Ab jetzt laufen die Hauptmodelle mit dat_main_final, nicht mehr mit dat_main.
-
+# = From now on, the main models will run using dat_main_final, not dat_main.
 ```
 
 ## Descriptive order check
@@ -272,7 +271,7 @@ dat_main_order |>
 
 ## Test order effects statistically
 
-We test three models: \
+Test three models: \
 A) a baseline model without order; \
 B) plus the main effect of order; \
 C) plus the interaction between planned_condition and order_group.
@@ -311,33 +310,6 @@ confint(m_order_int, method = "Wald")
 If anova(m_order_add, m_order_int) is not significant –\> then there is no evidence that order moderates the condition effect
 
 If anova(m_base, m_order_add) is significant –\> then there is a general difference between fasted_first and satiated_first, independent of condition
-
-# Helper functions
-
-## Assumption checks for paired t tests
-
-```{r}
-# ============================================================
-# Helper function: Voraussetzungen gepaarter t Tests
-# ============================================================
-
-check_paired_t <- function(x, y, label = "difference") {
-  d <- x - y
-  d <- d[!is.na(d)]
-
-  cat("\n-----------------------------\n")
-  cat("Check:", label, "\n")
-  cat("-----------------------------\n")
-
-  print(summary(d))
-  cat("\nShapiro Wilk Test:\n")
-  print(shapiro.test(d))
-
-  boxplot(d, main = paste("Differenzwerte:", label))
-  qqnorm(d, main = paste("QQ Plot:", label))
-  qqline(d)
-}
-```
 
 # Sample characteristics
 
@@ -392,14 +364,6 @@ edu_tab
 # Manipulation checks
 
 ## Subjective stress ratings
-
-Check the assumptions for the paired t-test
-
-**Interpretation**
-
--   If the QQ plot looks okay and there are no obvious outliers: proceed with the t-test
-
--   If the differences are highly skewed or prone to outliers: use the Wilcoxon Signed-Rank Test -\> report this additionally as a sensitivity check
 
 ```{r}
 # ============================================================
@@ -605,6 +569,78 @@ sample_n <- tibble(
 sample_n
 ```
 
+## Sample flow overview
+
+```{r}
+sample_flow_analysis <- tibble(
+  sample = c(
+    "analysis_session",
+    "ids_complete",
+    "dat_main",
+    "dat_main_final",
+    "dat_main_srs",
+    "dat_main_sses",
+    "dat_main_cerq_adaptive",
+    "dat_main_cerq_maladaptive",
+    "dat_main_stadit",
+    "dat_main_edeq"
+  ),
+  n_rows = c(
+    nrow(analysis_session),
+    length(ids_complete),
+    nrow(dat_main),
+    nrow(dat_main_final),
+    nrow(dat_main_srs),
+    nrow(dat_main_sses),
+    nrow(dat_main_cerq_adaptive),
+    nrow(dat_main_cerq_maladaptive),
+    nrow(dat_main_stadit),
+    nrow(dat_main_edeq)
+  ),
+  n_ids = c(
+    n_distinct(analysis_session$fastress_id),
+    length(ids_complete),
+    n_distinct(dat_main$fastress_id),
+    n_distinct(dat_main_final$fastress_id),
+    n_distinct(dat_main_srs$fastress_id),
+    n_distinct(dat_main_sses$fastress_id),
+    n_distinct(dat_main_cerq_adaptive$fastress_id),
+    n_distinct(dat_main_cerq_maladaptive$fastress_id),
+    n_distinct(dat_main_stadit$fastress_id),
+    n_distinct(dat_main_edeq$fastress_id)
+  )
+)
+
+sample_flow_analysis
+```
+
+# Assumption checks
+
+## Paired comparisons
+
+```{r}
+# ============================================================
+# Helper function: Voraussetzungen gepaarter t Tests
+# ============================================================
+
+check_paired_t <- function(x, y, label = "difference") {
+  d <- x - y
+  d <- d[!is.na(d)]
+
+  cat("\n-----------------------------\n")
+  cat("Check:", label, "\n")
+  cat("-----------------------------\n")
+
+  print(summary(d))
+  cat("\nShapiro Wilk Test:\n")
+  print(shapiro.test(d))
+
+  boxplot(d, main = paste("Differenzwerte:", label))
+  qqnorm(d, main = paste("QQ Plot:", label))
+  qqline(d)
+}
+```
+
 # Preliminary outcome checks
 
 ## Inspect outcome distributions and potential outliers
@@ -699,24 +735,15 @@ analysis_session |>
 
 ## Evaluate random intercept versus random slope structure
 
-**Was:** Testen, ob neben random intercept auch random slope für planned_condition sinnvoll ist.
+First, use a random intercept as the main model
 
-**Warum:** In einem within subject Cross over Design reagieren Personen oft unterschiedlich stark auf fasted versus satiated. Das bildet random slope ab.
+Then test the random slope
 
-Ein Random-Slope für planned_condition wird nur übernommen,\
-wenn das Modell klar besser passt und stabil geschätzt werden kann.
+-   Only include the random slope if the model is stable
 
--   **erst random intercept als Hauptmodell**
+-   no major warnings appear
 
--   dann random slope prüfen
-
--   random slope nur übernehmen, wenn
-
-    -   Modell stabil ist
-
-    -   keine starken Warnungen auftreten
-
-    -   und der Fit sichtbar besser ist
+-   and the fit is visibly better
 
 ```{r}
 
@@ -854,7 +881,6 @@ m0_prop <- lmer(prop_high_kcal ~ order_group + (1 | subject), data = dat_main_fi
 m1_prop <- lmer(prop_high_kcal ~ planned_condition + order_group + (1 | subject), data = dat_main_final, REML = FALSE)
 
 
-
 anova(m0_prop, m1_prop)
 summary(m1_prop)
 confint(m1_prop, method = "Wald")
@@ -872,7 +898,7 @@ results_main[["prop_high_kcal"]] <- list(m0 = m0_prop, m1 = m1_prop)
 # Moderationen Schritt fuer Schritt: total_kcal
 # ============================================================
 # ------------------------------------------------------------
-# Mini QC Funktion: wie viele vollständige Faelle hat ein Moderationssample
+# Mini QC Function: How many complete cases are there in a moderated sample?
 # ------------------------------------------------------------
 qc_mod_sample <- function(dat, outcome, cond = "planned_condition", mod) {
   dat |>
