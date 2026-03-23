@@ -65,8 +65,6 @@ parse_num <- function(x) {
 
 ## Read raw data
 
-Read data Ich importiere jede Datei einzeln, mache die Spalten maschinenlesbar und erzeuge explizit eine Session Variable, damit ich später sauber zwischen Messzeitpunkt und Bedingung unterscheiden kann.
-
 ```{r}
 # --------------------------------------------------
 # Read raw data from data_raw folder
@@ -113,9 +111,7 @@ food_t1 |> select(fastress_id) |> slice_head(n = 10)
 
 ## Initial ID cleaning and validity checks
 
-Leere Zeilen entfernen: Zeilen ohne ID entfernen Erwartung jetzt: n_rows = 17 n_id_na = 0 n_unique_id = 17
-
-macht folgendes in einem Schritt: entfernt NA entfernt leere IDs entfernt Beispielpersonen entfernt alles, was nicht dem echten ID-Format entspricht
+does the following in a single step: removes NA, removes empty IDs, removes sample individuals, removes anything that does not match the actual ID format
 
 ```{r}
 
@@ -156,11 +152,9 @@ food_t1 |> distinct(fastress_id)
 
 ```
 
-Satz für MA: “Non-valid example entries contained in the raw data files were removed prior to data processing based on the predefined participant ID format.”
-
 ## ID Check
 
--\> prüfen, ob jede Person genau einmal pro Datei vorkommt.
+-\> Check whether each person appears exactly once per file.
 
 ```{r}
 food_t1 |> count(fastress_id) |> filter(n > 1)
@@ -171,13 +165,11 @@ stress_t2 |> count(fastress_id) |> filter(n > 1)
 
 ```
 
-Alle Zeilen sind leer -\> Struktur stimmt! Satz für Masterarbeit: "It has been verified that there is exactly one observation per person and session."
-
 # Stress manipulation check
 
 ## Build combined stress dataset
 
-stress_all = T1 und T2 untereinander danach checkt man: gibt es Duplikate pro Person pro Session? haben Personen 1 oder 2 Sessions?
+stress_all = T1 and T2 listed one below the other; then check: Are there any duplicates per person per session? Do people have 1 or 2 sessions?
 
 ```{r}
 # --------------------------------------------------
@@ -212,7 +204,7 @@ stress_all |>
   count(n)
 ```
 
-Manipulation check: Goal: show Strong \> Mild (and optionally Strong \> Baseline) Uses complete cases across sessions (participants with T1 and T2), but does NOT split the test by session.
+Manipulation check: Goal: show Strong \> Mild (and optionally Strong \> Baseline). Uses complete cases across sessions (participants with T1 and T2), but does NOT split the test by session.
 
 ```{r}
 
@@ -295,8 +287,6 @@ stress_person <- stress_indices_per_session |>
   )
 ```
 
-Für den Methodenteil: "A manipulation check was conducted to verify the effectiveness of the stress induction. Subjective stress ratings were assessed during baseline, mild, and strong stress conditions. Mean stress ratings were computed across multiple task runs. For the manipulation check, stress ratings during strong stress conditions were compared to mild stress conditions and baseline ratings."
-
 # Food data preparation
 
 ## Combine food files
@@ -363,17 +353,6 @@ food_long_raw |> count(flag_negative)
 
 ```
 
-beides: raw & complete, ohne Daten zu verlieren
-
-Long format bedeutet: eine Zeile = eine Beobachtungseinheit Statt viele Messungen in vielen Spalten zu haben, stehen sie untereinander in wenigen Spalten. ein Item -\> zu einem Zeitpunkt -\> für eine Person
-
-Merksatz für MA Methoden: „Food intake data were reshaped into long format to compute item level consumption before aggregation to the session level.“
-
-1.  Spaltennamen der Food Items prüfen
-2.  Food Daten von wide zu long umformatieren (\$ sagt:Muster muss am Ende des Strings stehen.)
-3.  kontrollieren, ob das Format stimmt (also ob ich jetzt columns habe)
-4.  konsumierte Gramm berechnen
-
 ## Compute gram intake
 
 ```{r}
@@ -425,8 +404,6 @@ food_session_complete <- food_session_raw |>
 ```
 
 ## Inspect piece counts
-
-"In addition to pre and post weights, the number of pieces per food item was inspected as a plausibility check. Piece counts before and after the task were consistent with the weight-based intake calculations, and no implausible values were identified."
 
 ```{r}
 # ============================================================
@@ -488,12 +465,6 @@ food_long_pcs |>
   filter(post == 0, !is.na(pre), consumed_pcs != pre) |>
   select(fastress_id, session, item, pre, post, consumed_pcs)
 ```
-
-### Pausibility Check
-
-“Food intake was calculated as the difference between the weight of each item before and after the task. Plausibility was ensured by verifying that no post-task weight exceeded the pre-task weight; no negative intake values were observed.” “Outcome variables were computed prior to statistical analyses in order to identify implausible values and ensure data quality. Plausibility checks were based on predefined criteria rather than hypothesis testing. No implausible values were identified for food intake.”
-
-Interpretation: xx Zeilen -\> 0 davon haben einen negativen Kennwert -\> kein Item ist unplausibel - Consumed_g = Rohwert - Consumed_g_clean = bereinigter Wert (negative = NA) -\> keine negativen Werte vorhanden, deshlab -\> clean = raw
 
 # Blood data preparation
 
@@ -585,9 +556,7 @@ blood_all |>
 
 ## Define metabolic condition
 
-Jede Person × Session bekommt eine eindeutige Bedingung: -\> fasted -\> satiated Unabhängig von Session-Reihenfolge, da diese randomisiert war
-
-“For female participants, menstrual cycle phase was monitored and considered during study scheduling. Due to limited statistical power, cycle phase was not included as an explicit factor in the main analyses.”
+Each person × session is assigned a unique condition: -\> fasted -\> satiated. This is independent of the order of the sessions, as they were randomized.
 
 ```{r}
 # ============================================================
@@ -628,9 +597,9 @@ blood_condition |> count(session, condition)
 
 ```
 
-mutate(...) erstellt Hilfsvariablen, die prüfen, ob Werte in euren vordefinierten Ranges liegen blood_condition: eine Tabelle mit einer Zeile pro Person und Session und der biologisch verifizierten Condition.
+blood_condition: a table with one row per person and session, containing the biologically verified condition.
 
-count(condition) zeigt, wie viele Sessions als fasted oder satiated klassifiziert wurden count(session, condition) zeigt, wie das über T1 und T2 verteilt ist (sollte bei Randomisierung nicht 100% an Session gebunden sein)
+count(condition) shows how many sessions were classified as “fasted” or “satiated” count(session, condition) shows how this is distributed across T1 and T2 (should not be 100% tied to a specific session in the case of randomization)
 
 ### Planned condition (Randomisierung)
 
@@ -657,13 +626,11 @@ planned_condition |> count(session, planned_condition)
 
 ```
 
-planned_condition: eine Tabelle mit der randomisierten Condition, also dem, was im Design vorgesehen war.
+planned_condition: a table containing the randomized condition, i.e., what was specified in the design.
 
-Satz für Methodenteil: “Metabolic condition was coded at the session level based on blood glucose and ketone concentrations measured before and after the MRI session. Sessions were classified as fasted or satiated if at least one blood marker per session fell within the predefined range for the respective metabolic state.”
+## Compare planned and measured condition (Randomisation-Check)
 
-## Compare planned and measured condition (Randomisierungs-Check)
-
-prüfen, ob fasted vs satiated ungefähr gleich oft in T1 vs T2 vorkommt.
+Check whether “fasted” and “satiated” occur roughly the same number of times in T1 and T2.
 
 ```{r}
 # ============================================================
@@ -680,8 +647,6 @@ planned_condition |>
   ungroup()
 
 ```
-
-"Metabolic manipulation was verified based on blood glucose and ketones before and after the session. A session was considered biologically consistent with the planned condition if at least one marker supported the condition within predefined ranges. In the case of conflicting markers, the planned condition was used as the decision rule. Sessions without support from any marker were marked as unclear."
 
 ## Describe blood markers by condition
 
@@ -759,7 +724,7 @@ blood_condition_full |>
 
 ### Manipulation Check Condition and Blood
 
-Ziel: Überprüfen, ob die geplante Condition (Randomisierung) mit der biologischen Klassifikation (Blutwerte) übereinstimmt.
+Aim: To verify whether the planned treatment group (randomization) corresponds to the biological classification (blood test results).
 
 ```{r}
 # ============================================================
@@ -801,13 +766,11 @@ blood_condition_full |>
 
 ```
 
-**Ergebnis:** Man bekommt eine klare Zahl wie: „X% der Sessions stimmen überein“ und eine Tabelle, die zeigt, wo Abweichungen passieren Warum diese Trennung so wichtig ist **planned_condition** = Designvariable (Randomisierung) -\> für Hauptanalysen **blood_condition** = Compliance/Manipulation Check -\> zur Validierung condition_check = Dokumentation, ob die Manipulation wirklich geklappt hat
+**planned_condition** = Design variable (randomization) -\> for primary analyses **blood_condition** = Compliance/manipulation check -\> for validation condition_check = Documentation of whether the manipulation actually worked
 
-“Blood glucose and ketone concentrations measured before and after the MRI session were used to verify compliance with the metabolic manipulation. Because classification was based on predefined ranges and required only one marker per session to fall within the respective range, some sessions showed overlap between planned and blood based classification.”
+==\> Perform all primary analyses using planned_condition.
 
-==\> Alle Hauptanalysen mit planned_condition durchführen.
-
-Alle Sessions anzeigen, die nicht übereinstimmen:
+Show all sessions that do not match:
 
 ```{r}
 condition_check |>
@@ -924,11 +887,11 @@ survey_t1 |>
 
 ```
 
-sub-002 kommt zweimal vor -\> beide sind T1 -\> den erst ausgefüllten behalten
+sub-002 appears twice -\> both are T1 -\> keep the first one filled out
 
-Pro Person und Session genau eine Zeile behalten -\> die erste ausgefüllte. Die zweite (falsch ausgefüllte T1) wird verworfen.
+Keep exactly one row per person and session -\> the first one filled out. The second (incorrectly filled out T1) is discarded.
 
-Die Regel lautet jetzt (wichtig, auch für den Methodenteil): Wenn ein Fragebogen innerhalb derselben Session mehrfach ausgefüllt wurde, wurde die zuerst ausgefüllte Version beibehalten.
+The rule is now: If a questionnaire was filled out multiple times within the same session, the first version filled out was retained.
 
 ```{r}
  
@@ -954,8 +917,6 @@ survey_t1 |> count(fastress_id) |> filter(n > 1)
 ```
 
 ## Combine survey files
-
-**Nächster Schritt:** Survey T1 und T2 zusammenführen Zuerst Spalten zu gleichen Types machen. Type: Text (character): Text kann alles darstellen (Zahl, Wort, leer) -\> man verliert keine Information
 
 ```{r}
 
@@ -1392,9 +1353,9 @@ table1_sample
 
 ## Sample overview and ID matching
 
-Ziel dieses Abschnitts: Wissen, wer in welchen Datensätzen vorkommt, bevor man irgendwas mergt oder Analysen macht.
+The goal of this section: To know who appears in which datasets before merging anything or performing any analyses.
 
-Es sind mehrere Datensätze: Nicht jede Person hat alles vollständig. --\> Deshalb muss man zuerst strukturieren, welche Personen in welchen Daten vorhanden sind.
+There are multiple datasets: Not every person is fully represented in all of them. --\> That’s why we need to determine which people are included in which datasets.
 
 ```{r}
 # --------------------------------------------------
@@ -1407,11 +1368,7 @@ ids_survey <- survey_person |> distinct(fastress_id)
 
 ```
 
-distinct(fastress_id) bedeutet: Gib mir jede ID nur einmal.\
-**Warum?** In food_session hat jede Person zwei Zeilen (T1 und T2). Wenn man einfach nrow(food_session) zählt, zählt man Sessions, nicht Personen.\
--\> distinct(fastress_id) macht daraus eine reine Personenliste.
-
-**Ergebnis:** ids_food ist eine Tabelle mit einer Spalte (fastress_id) und einer Zeile pro Person, die Food Daten hat. Gleiches fuer Blood und Survey. Man baut damit drei „Teilnehmerlisten“.
+**Result:** ids_food is a table with one column (fastress_id) and one row per person containing food data. The same applies to Blood and Survey. This is used to create three “participant lists.”
 
 ```{r}
 # --------------------------------------------------
@@ -1430,7 +1387,7 @@ list(
 
 ## Dataset overlap
 
--\> wichtig: Wer ist in welchem Datensatz?
+-\> Important: Who is in which dataset?
 
 ```{r}
 # --------------------------------------------------
@@ -1445,37 +1402,24 @@ ids_overview <- ids_food |>
 
 ```
 
-mutate(in_food = TRUE)\
-Bedeutung: Füge eine neue Spalte hinzu, die sagt: Diese Person ist in Food vorhanden.
-
-Warum TRUE FALSE? - Weil wir nachher eine Tabelle wollen, wo für jede Person steht: -\> in_food: TRUE oder FALSE -\> in_blood: TRUE oder FALSE -\> in_survey: TRUE oder FALSE
-
-full_join(ids_blood \|\> mutate(in_blood = TRUE), by = "fastress_id") Bedeutung: Verbinde die Food Liste mit der Blood Liste, und nimm alle IDs aus beiden.\
-Wichtig: full_join ist hier zentral, weil es alle behalten soll:\
--\> Personen, die nur Food haben\
--\> Personen, die nur Blood haben\
--\> Personen, die beides haben
-
-Nach einem full join sind bei Personen, die z B nicht in Survey sind, die Spalte in_survey erstmal NA.\
-NA heisst: „unbekannt“ oder „fehlt“. Aber wir wollen: Wenn jemand nicht im Survey ist, soll das explizit FALSE sein. Darum: mutate(across(starts_with("in\_"), \~replace_na(.x, FALSE)))
-
-Kombiationen zählen:
+count combination:
 
 ```{r}
 ids_overview |> count(in_food, in_blood, in_survey)
 ```
 
-Bedeutung: Wie viele Personen gehören zu jeder Kombination?\
-Beispiele:\
-TRUE TRUE TRUE = Personen mit allen drei Datensaetzen\
-TRUE TRUE FALSE = Personen mit Food + Blood, aber ohne Survey\
-TRUE FALSE TRUE = Food + Survey, aber kein Blood
+Meaning: How many people are included in each combination?Examples:\
+TRUE TRUE TRUE = People with all three data sets\
+TRUE TRUE FALSE = People with Food + Blood, but without Survey\
+TRUE FALSE TRUE = Food + Survey, but no Blood
 
-==\> wichtig für Ergebnisteil
+==\> Important for the results section
 
 ## Descriptives
 
-Gesamtstichprobe (alle mit mindestens einer gültigen Session) Analysestichprobe (nur complete cases für Within Subject Modelle)
+Total sample (all with at least one valid session)
+
+Analysis sample (only complete cases for within-subject models)
 
 ```{r}
 
@@ -1541,15 +1485,13 @@ blood_person |> count(sex_male_m_female_f)
 
 ### Outcome Variablen für Food final bauen: kcal und High vs Low
 
-folgender Code berechnet: total_kcal high_kcal low_kcal prop_high_kcal
+-   total_kcal → total energy intake
 
--   `total_kcal` → gesamte Energieaufnahme
+-   high_kcal → energy from high-calorie snacks
 
--   `high_kcal` → Energie aus hochkalorischen Snacks
+-   low_kcal → energy from low-calorie snacks
 
--   `low_kcal` → Energie aus niedrigkalorischen Snacks
-
--   `prop_high_kcal` → Anteil hochkalorischer Energie (Präferenzverschiebung unter Stress)
+-   prop_high_kcal → proportion of high-calorie energy (shift in preference under stress)
 
 ```{r}
 # --------------------------------------------------
@@ -1680,11 +1622,9 @@ food_long_raw |>
 
 ```
 
-Für Methodenteil: "Food intake was calculated as the difference between pre and post weights. Post values of zero indicated complete consumption. Plausibility checks confirmed that post-task weights never exceeded pre-task weights."
-
 ### Merge QC:
 
-Alle drei Outputs sollten leer sein.
+All three outputs should be empty.
 
 ```{r}
 # ============================================================
@@ -1708,9 +1648,7 @@ survey_person |>
   filter(n > 1)
 ```
 
-Für den Methodenteil: “Outcome variables were computed independently of experimental condition. Metabolic state (fasted vs. satiated) was subsequently coded at the session level, accounting for the randomized order of experimental sessions.”
-
-das ist der zentraler Analysedatensatz:
+This is the main dataset:
 
 ```{r}
 # ============================================================
@@ -1748,11 +1686,11 @@ analysis_session |> count(session, planned_condition)
 
 ```
 
-### Check nach dem Join von planned_condition und blood_all
+### Check after joining `planned_condition` and `blood_all`
 
--   n_rows und n_pairs sollten gleich sein
+-   `n_rows` and `n_pairs` should be equal
 
--   Der zweite Output muss leer sein
+-   The second output must be empty
 
 ```{r}
 # ============================================================
@@ -1833,9 +1771,9 @@ analysis_session |>
 
 ### Check for row inflation after joining survey traits
 
--   n_rows und n_pairs sollten gleich sein
+-   n_rows and n_pairs should be equal
 
--   Der zweite Output muss leer sein
+-   The second output must be empty
 
 ```{r}
 # ============================================================
@@ -1981,3 +1919,4 @@ saveRDS(blood_person, "data_clean/blood_person.rds")
 saveRDS(education_person, "data_clean/education_person.rds")
 
 ```
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           

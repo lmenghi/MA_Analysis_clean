@@ -45,12 +45,6 @@ education_person <- readRDS("data_clean/education_person.rds")
 
 ```
 
-Im Cleaning File wurde erstellt: `subject = factor(fastress_id)`.
-
--   Im Analyse File sollte direkt nach readRDS einmal gecheckt werden, ob subject und analysis_session wirklich drin sind.
-
--   Zusätzlich prüfen, ob subject wirklich ein Faktor ist
-
 ## Verify imported analysis objects
 
 ```{r}
@@ -65,41 +59,35 @@ stopifnot("planned_condition" %in% names(analysis_session))
 ## Overview of datasets and analysis samples
 
 **analysis_session**\
-Session-Level Datensatz mit einer Zeile pro Person und Session. Zentrale Basis aller Analysen.
+Session-level dataset with one row per person and session. The central basis for all analyses.
 
 **ids_complete**\
-Personen mit zwei gültigen Sessions. Definiert das designkonforme Within-Subject Sample.
+Persons with two valid sessions. Defines the design-compliant within-subject sample.
 
-**dat_main**\
-Complete-Case Sample für die Hauptanalyse ohne Berücksichtigung der Reihenfolge.
+**dat_main\
+**Complete-case sample for the main analysis, disregarding order.
 
 **order_tbl**\
-Person-Level Tabelle mit Information zur Reihenfolge der Bedingungen.
+Person-level table containing information on the order of conditions.
 
 **dat_main_order**\
-dat_main erweitert um die Variable order_group.
+dat_main extended to include the variable order_group.
 
 **dat_main_final**\
-Finaler Analyse-Datensatz für alle Hauptmodelle. Enthält planned_condition und order_group als Kovariate. Grundlage für Hauptanalysen, Moderationen und Sensitivitätsanalysen.
+Final analysis dataset for all main models. Includes planned_condition and order_group as covariates. Basis for main analyses, moderation analyses, and sensitivity analyses.
 
-**Moderator-Samples**\
-dat_main_final gefiltert auf nicht fehlende Moderatorwerte, zB dat_main_srs oder dat_main_sses.
+**Moderator Samples:** \
+dat_main_final filtered for non-missing moderator values, e.g., dat_main_srs or dat_main_sses.
 
-**Sensitivitäts-Samples**\
-Varianten von dat_main_final zur Prüfung der Robustheit, zB ohne Mismatch-Sessions, mit log-Transformation oder ohne obere 1 Prozent Extremwerte.
+**Sensitivity Samples**\
+Variants of dat_main_final for testing robustness, e.g., without mismatch sessions, with log transformation, or without the top 1 percent of outliers.
 
 **blood_wide**\
-Wide-Format Datensatz für gepaarte Tests der Blutmarker.Analysis
+Wide-format dataset for paired tests of blood markers.
+
+# Analysis
 
 ## Define complete case sample
-
-**Was man macht?** Man berechnet, wie viele Personen für welche Analyse zur Verfügung stehen: within Subject Analysen brauchen zwei Sessions pro Person Moderation braucht zusätzlich Moderatorwerte
-
-**Wieso man das macht?** So weiss man vor dem Modellieren exakt, welches N man verwendet, und man kann es später im Ergebnisteil korrekt berichten.
-
-Anzahl Personen insgesamt Anzahl Personen mit zwei Sessions Anzahl Personen mit gültigen Moderatorwerten
-
-Methodenteil: "Primary analyses were conducted using within subject mixed effects models including only participants with complete data for both experimental sessions. The primary outcome was total energy intake (total_kcal). Planned metabolic condition (fasted vs satiated) was entered as a fixed effect, with a random intercept for participant. Stress reactivity (SRS) was tested as a continuous moderator."
 
 ```{r}
 # --------------------------------------------------
@@ -118,10 +106,6 @@ ids_complete <- analysis_session |>
 ```
 
 ## Create fixed analysis samples
-
-**Was:** fixe Datensätze erstellen, die ich danach konsequent in allen Modellen verwende.
-
-W**arum:** So bleibt das N stabil und ich berichte später exakt dieselben Samples, die ich wirklich analysiert habe.
 
 ```{r}
 # ============================================================
@@ -182,15 +166,13 @@ dat_main |>
 
 ## Inspect session order structure
 
-Prüfen, ob die Reihenfolge der Bedingungen relevant ist:
+Check whether the order of the conditions is relevant:
 
--   ob Personen zuerst fasted oder zuerst satiated hatten
+-   whether participants were fasting or satiated first
 
--   ob Order einen Haupteffekt hat
+-   whether order has a main effect
 
--   ob Order die Wirkung von `planned_condition` moderiert
-
-1.  prüfen, ob gleiches Sample wie Haupanalyse. Erwartung: Jede Person hat 2 Zeilen Einmal T1 und einmal T2 Und planned_condition ist nicht NA
+-   whether order moderates the effect of planned_condition
 
 ## Verify crossover structure
 
@@ -204,8 +186,6 @@ dat_main |>
   count(session, planned_condition)
 
 ```
-
-2.  Baue eine Order Variable pro Person Definition: fasted_first bedeutet T1 ist fasted satiated_first bedeutet T1 ist satiated
 
 ## Create order variable
 
@@ -231,8 +211,6 @@ order_tbl <- dat_main |>
 order_tbl |> count(order_group)
 
 ```
-
-3.  Merge die Order Variable in dat_main Erwartung n_missing_order ist 0
 
 ## Merge order variable into the main sample
 
@@ -279,8 +257,6 @@ dat_main_final <- dat_main_order
 
 ## Descriptive order check
 
-4.  Schneller deskriptiver Order Check —\> Das ist kein Test, nur ein Blick ob es grob anders aussieht.
-
 ```{r}
 dat_main_order |>
   group_by(order_group, planned_condition) |>
@@ -296,13 +272,12 @@ dat_main_order |>
 
 ## Test order effects statistically
 
-5.  Modelltest für Order Effekt.
+We test three models: \
+A) a baseline model without order; \
+B) plus the main effect of order; \
+C) plus the interaction between planned_condition and order_group.
 
-    Wir testen drei Modelle\
-    A Basismodell ohne Order\
-    B plus Order Haupteffekt\
-    C plus Interaktion planned_condition mal order_group\
-    –\> Wenn C gegen B nicht besser wird, gibt es keinen Hinweis, dass der Condition Effekt von der Reihenfolge abhaengt.
+-\> If C does not perform better than B, there is no evidence that the condition effect depends on the order.
 
 ```{r}
 m_base <- lmer(
@@ -331,14 +306,11 @@ confint(m_order_int, method = "Wald")
 
 ```
 
-**Interpretation\
-**Wenn anova(m_order_add, m_order_int) nicht signifikant ist –\> dann kein Hinweis auf Reihenfolge als Moderator des Condition Effekts
+**Interpretation**
 
-Wenn anova(m_base, m_order_add) signifikant ist –\> dann gibt es einen generellen Unterschied zwischen fasted_first und satiated_first, unabhängig von Condition
+If anova(m_order_add, m_order_int) is not significant –\> then there is no evidence that order moderates the condition effect
 
-Satz für den Methodenteil oder Ergebnisteil Wenn nichts signifikant "Order effects were examined by adding an order factor indicating whether participants completed the fasted condition in the first session. No evidence for order dependent effects was observed."
-
-Wenn signifikant "Order effects were observed, indicating that outcomes differed depending on whether the fasted condition was completed first. Therefore, order was retained as a covariate in all primary models."
+If anova(m_base, m_order_add) is significant –\> then there is a general difference between fasted_first and satiated_first, independent of condition
 
 # Helper functions
 
@@ -421,13 +393,13 @@ edu_tab
 
 ## Subjective stress ratings
 
-#### Voraussetzungen paired t-test prüfen
+Check the assumptions for the paired t-test
 
-Interpretation
+**Interpretation**
 
--   Wenn QQ-Plot okay aussieht und keine extremen Ausreisser auffallen: t-Test beibehalten
+-   If the QQ plot looks okay and there are no obvious outliers: proceed with the t-test
 
--   Wenn die Differenzen sehr schief oder stark ausreisseranfällig sind: Wilcoxon Signed Rank Test -\> zusätzlich als Sensitivitätscheck berichten
+-   If the differences are highly skewed or prone to outliers: use the Wilcoxon Signed-Rank Test -\> report this additionally as a sensitivity check
 
 ```{r}
 # ============================================================
@@ -576,10 +548,6 @@ t.test(hunger_wide$fasted, hunger_wide$satiated, paired = TRUE)
 
 ## Create moderator-specific datasets
 
-**Was?** Für jeden Moderator einen eigenen Analyse-Datensatz erstellen
-
-Interpretation: z.B. 32 Zeilen und 16 IDs -\> dann fehlen keine Moderatorwerte in den complete cases
-
 ```{r}
 # ============================================================
 # Moderator spezifische Samples
@@ -641,16 +609,6 @@ sample_n
 
 ## Inspect outcome distributions and potential outliers
 
-**Was:**
-
--   Verteilungen der Outcomes anschauen,
-
--   Nullen und Ausreisser prüfen,
-
--   Residuenchecks für das Basismodell.
-
-**Wieso:** Um früh zu sehen, ob zB. total_kcal stark schief ist oder ob einzelne Sessions extrem sind. Das beeinflusst Sensitivitätstransformationen und die Interpretation.
-
 ```{r}
 # ============================================================
 # Outcome checks (Verteilungen, Nullen, Ausreisser)
@@ -697,14 +655,7 @@ dat_main_final |>
 
 ```
 
-**Interpretation**: Es gibt Variabilität, aber nicht sofort etwas absurd Unplausibles.\
-Die Range ist breit, aber bei Snackintake in einem Laborparadigma noch nicht automatisch problematisch.
-
 ## Descriptive statistics by condition
-
-**Was man macht?** Man schaut sich die Outcomes (total_kcal, high_kcal, low_kcal, prop_high_kcal) nach planned condition an.
-
-**Wieso man das macht?** Das ist der erste Plausibilitätscheck für den Effekt Man sieht sofort, ob Wertebereiche plausibel sind. Man bekommt Tabellen für den Ergebnisteil
 
 ```{r}
 # --------------------------------------------------
@@ -743,14 +694,6 @@ analysis_session |>
   )
 
 ```
-
-**Alle Sessions:** explorativer Überblick (nicht für Hypothesentests) Beschreibt alle vorhandenen Sessions -\> Manche Personen tragen nur eine Session bei
-
--\> Das ist ok für einen Überblick, aber: fasted und satiated Gruppen bestehen nicht aus denselben Personen Mittelwerte sind nicht direkt vergleichbar =\> dient als explorativer Überblick
-
-**nur complete cases:** Jede Person kommt genau einmal in fasted und einmal in satiated vor. Die Mittelwerte sind within subject vergleichbar =\> designkonforme Beschreibung
-
-Satz für Methodenteil: "Primary analyses were conducted on participants with complete data for both experimental sessions, ensuring a within subject comparison of fasted and satiated conditions."
 
 # Model specification
 
@@ -809,10 +752,6 @@ use_random_slope <- FALSE
 
 ## Define reporting functions for mixed models
 
-**Was:** Hilfsfunktionen bauen, die für jedes Outcome automatisch Modell, CI, Vergleich und Effektgrösse ausgeben.
-
-**Warum:** Copy Paste Fehler sparen und konsistente Outputs.
-
 ```{r}
 # ============================================================
 # Funktionen: report ready Output fuer Mixed Models
@@ -866,14 +805,6 @@ model_summary_pack <- function(m0, m1, dat, outcome) {
 # Main analyses
 
 ## Test condition effects across outcomes
-
-(Condition Effekt) **Was man macht?** Man rechnet das erste Mixed Model: Outcome wird durch planned condition vorhergesagt, mit Zufallsinterzept pro Person.
-
-**Wieso man das macht?** Das ist das Referenzmodell. Es zeigt den generellen Unterschied fasted vs satiated. Es ist die Grundlage für spätere Moderationen
-
--   `m0` ist jetzt nicht mehr das reine Nullmodell, sondern das Baseline-Modell mit Order
-
--   `m1` testet dann, ob `planned_condition` über `order_group` hinaus zusätzliche Erklärung liefert
 
 ```{r}
 # ============================================================
@@ -936,10 +867,6 @@ results_main[["prop_high_kcal"]] <- list(m0 = m0_prop, m1 = m1_prop)
 
 ## Define moderation helper functions
 
-**Was:** pro Moderator die Interaktion planned_condition mal Moderator testen.
-
-**Warum**: Das entspricht dem Hypothesentest für Moderation, sauber vergleichbar über alle Moderatoren.
-
 ```{r}
 # ============================================================
 # Moderationen Schritt fuer Schritt: total_kcal
@@ -974,7 +901,9 @@ stop_if_no_cases <- function(qc_tbl) {
 
 ### Moderation 1: SRS
 
-m_srs_add = Haupteffekt Condition plus Haupteffekt Moderator m_srs_int = plus Interaktion anova testet, ob die Interaktion Zusatzerklärung bringt
+m_srs_add = main effect of Condition plus main effect of Moderator
+
+m_srs_int = plus interaction; ANOVA tests whether the interaction provides additional explanatory power
 
 ```{r}
 # ------------------------------------------------------------
@@ -1183,8 +1112,6 @@ results_mod_total <- list(
 
 ```
 
-Moderationsergebnisse speichern: alle p Werte der Interaktionen in einer Tabelle. -\> perfekt für Ergebnisteil und Appendix.
-
 ## Summarise moderation test results
 
 ```{r}
@@ -1211,16 +1138,6 @@ mod_tests_total
 
 ## Apply false discovery rate correction
 
-**Erklärung**: Dann sieht man später direkt:
-
--   unkorrigierter p-Wert
-
--   FDR-korrigierter p-Wert
-
--   ob etwas nach Korrektur noch signifikant ist
-
-Das ist vor allem für die finale Interpretation hilfreich.
-
 ```{r}
 mod_tests_total <- mod_tests_total |>
   mutate(
@@ -1235,12 +1152,9 @@ mod_tests_total
 
 ## Exclude sessions with planned versus measured mismatch
 
-**Was:** Robustheit testen, indem man Sessions mit Mismatch ausschliesst.
+**What:** Test robustness by excluding sessions with mismatches.
 
-**Warum:** So kann man zeigen, dass die Hauptergebnisse nicht von Non Compliance getrieben sind. Wenn ich nur die metabolisch stimmigen Sessions betrachte, bleibt der Haupteffekt trotzdem bestehen?
-
-**Vorbereitung:** Man braucht measured_condition im Session Datensatz.\
--\> condition_check ist bereits gebaut, also muss man es reinmergen.
+**Why:** This demonstrates that the main results are not driven by non-compliance. If I consider only the metabolically consistent sessions, does the main effect still hold?
 
 ```{r}
 # ============================================================
@@ -1295,17 +1209,15 @@ print(model_summary_pack(mods_b$m0, mods_b$m1, dat_main_nomismatch, "total_kcal"
 
 ## Reanalyse using log transformed total energy intake
 
-Die Log Transformation macht typischerweise:
+Log transformation typically:
 
--   grosse Werte weniger dominant
+-   makes large values less dominant
 
--   die Verteilung symmetrischer
+-   makes the distribution more symmetrical
 
--   Residuen oft etwas sauberer
+-   often produces slightly cleaner residuals
 
-**Was:** log1p(total_kcal) als Robustheitscheck analysiere. Bleibt mein Haupteffekt bestehen, wenn ich die Schiefe der Outcome-Verteilung statistisch abmildere?
-
-**Warum:** Essensdaten sind oft stark rechtsschief, log1p ist eine Standard Sensitivität.
+**What:** Analyze log1p(total_kcal) as a robustness check. Does my main effect persist if I statistically reduce the skewness of the outcome distribution?
 
 ```{r}
 # ============================================================
@@ -1325,10 +1237,6 @@ pack_log$ci
 ```
 
 ## Reanalyse excluding extreme values
-
-**Was:** Obere Extremwerte markieren, zB über dem 99 Prozent Quantil, und das Modell ohne diese Sessions rechnen.
-
-**Warum:** Damit du später nicht spontan entscheidest, sondern eine klare Regel hast.
 
 ```{r}
 # ============================================================
@@ -1359,10 +1267,6 @@ print(model_summary_pack(mods_trim$m0, mods_trim$m1, dat_main_no_out, "total_kca
 # Visualisation and model diagnostics
 
 ## Plot individual trajectories and predicted interactions
-
-**Was:** Spaghetti Plot und Interaktions Plot.
-
-**Warum:** zwei Plot Typen, die man in Resultaten und Anhang braucht.
 
 ```{r}
 # ============================================================
@@ -1420,10 +1324,6 @@ pred_grid |>
 ```
 
 ## Inspect model diagnostics for the primary outcome
-
-**Was:** Residuen und Fits prüfen, Einflussreiche Punkte markieren.
-
-**Wieso:** Mixed Models sind relativ robust, aber ich will wissen, ob zB ein einzelner Fall den Effekt treibt.
 
 ```{r}
 # ============================================================
