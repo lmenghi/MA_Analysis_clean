@@ -361,6 +361,33 @@ gender_tab
 edu_tab
 ```
 
+# Assumption checks
+
+## Paired comparisons
+
+```{r}
+# ============================================================
+# Helper function: Voraussetzungen gepaarter t Tests
+# ============================================================
+
+check_paired_t <- function(x, y, label = "difference") {
+  d <- x - y
+  d <- d[!is.na(d)]
+
+  cat("\n-----------------------------\n")
+  cat("Check:", label, "\n")
+  cat("-----------------------------\n")
+
+  print(summary(d))
+  cat("\nShapiro Wilk Test:\n")
+  print(shapiro.test(d))
+
+  boxplot(d, main = paste("Differenzwerte:", label))
+  qqnorm(d, main = paste("QQ Plot:", label))
+  qqline(d)
+}
+```
+
 # Manipulation checks
 
 ## Subjective stress ratings
@@ -612,33 +639,6 @@ sample_flow_analysis <- tibble(
 )
 
 sample_flow_analysis
-```
-
-# Assumption checks
-
-## Paired comparisons
-
-```{r}
-# ============================================================
-# Helper function: Voraussetzungen gepaarter t Tests
-# ============================================================
-
-check_paired_t <- function(x, y, label = "difference") {
-  d <- x - y
-  d <- d[!is.na(d)]
-
-  cat("\n-----------------------------\n")
-  cat("Check:", label, "\n")
-  cat("-----------------------------\n")
-
-  print(summary(d))
-  cat("\nShapiro Wilk Test:\n")
-  print(shapiro.test(d))
-
-  boxplot(d, main = paste("Differenzwerte:", label))
-  qqnorm(d, main = paste("QQ Plot:", label))
-  qqline(d)
-}
 ```
 
 # Preliminary outcome checks
