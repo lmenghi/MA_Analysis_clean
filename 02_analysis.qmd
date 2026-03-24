@@ -36,6 +36,8 @@ library(lmerTest)
 library(readr)
 
 analysis_session <- readRDS("data_clean/analysis_session.rds")
+analysis_session_sample <- readRDS("data_clean/analysis_session_sample.rds")
+analysis_paired_main <- readRDS("data_clean/analysis_paired_main.rds")
 survey_person <- readRDS("data_clean/survey_person.rds")
 condition_check <- readRDS("data_clean/condition_check.rds")
 stress_person <- readRDS("data_clean/stress_person.rds")
@@ -56,35 +58,6 @@ stopifnot("planned_condition" %in% names(analysis_session))
 ```
 
 # Analysis sample setup
-
-## Overview of datasets and analysis samples
-
-**analysis_session**\
-Session-level dataset with one row per person and session. The central basis for all analyses.
-
-**ids_complete**\
-Persons with two valid sessions. Defines the design-compliant within-subject sample.
-
-**dat_main\
-**Complete-case sample for the main analysis, disregarding order.
-
-**order_tbl**\
-Person-level table containing information on the order of conditions.
-
-**dat_main_order**\
-dat_main extended to include the variable order_group.
-
-**dat_main_final**\
-Final analysis dataset for all main models. Includes planned_condition and order_group as covariates. Basis for main analyses, moderation analyses, and sensitivity analyses.
-
-**Moderator Samples:** \
-dat_main_final filtered for non-missing moderator values, e.g., dat_main_srs or dat_main_sses.
-
-**Sensitivity Samples**\
-Variants of dat_main_final for testing robustness, e.g., without mismatch sessions, with log transformation, or without the top 1 percent of outliers.
-
-**blood_wide**\
-Wide-format dataset for paired tests of blood markers.
 
 # Analysis
 
@@ -110,19 +83,21 @@ ids_complete <- analysis_session |>
 
 ```{r}
 # ============================================================
-# Analyse Setup: fixe Analyse Samples
+# Analyse Setup: fixes Hauptsample aus dem Cleaning-Skript
 # ============================================================
 
-# Hauptsample: within subject, complete cases
-dat_main <- analysis_session |>
-  filter(
-    fastress_id %in% ids_complete,
-    !is.na(planned_condition),
-    !is.na(total_kcal)
-  )
+dat_main <- analysis_paired_main
 
-dat_main |> count(fastress_id, name = "n_rows_per_id") |> count(n_rows_per_id)
-# -> Analysesample überprüfen: n = Anzahl Personen, Zeilen pro Person
+# QC
+dat_main |>
+  group_by(fastress_id) |>
+  summarise(
+    n_rows = n(),
+    n_sessions = n_distinct(session),
+    n_conditions = n_distinct(planned_condition),
+    .groups = "drop"
+  ) |>
+  count(n_rows, n_sessions, n_conditions)
 
 ```
 
@@ -271,9 +246,9 @@ dat_main_order |>
 
 ## Test order effects statistically
 
-Test three models: \
-A) a baseline model without order; \
-B) plus the main effect of order; \
+Test three models:\
+A) a baseline model without order;\
+B) plus the main effect of order;\
 C) plus the interaction between planned_condition and order_group.
 
 -\> If C does not perform better than B, there is no evidence that the condition effect depends on the order.
@@ -459,8 +434,9 @@ t.test(
 # ============================================================
 
 blood_wide <- analysis_session |>
-  filter(fastress_id %in% ids_complete, !is.na(planned_condition)) |>
+  filter(!is.na(planned_condition)) |>
   select(fastress_id, planned_condition, ketones_pre, glucose_pre) |>
+  distinct() |>
   pivot_wider(
     names_from = planned_condition,
     values_from = c(ketones_pre, glucose_pre)
@@ -498,12 +474,15 @@ t.test(blood_wide$glucose_pre_fasted, blood_wide$glucose_pre_satiated, paired = 
 # Manipulationcheck Hunger: fasted vs satiated (paired)
 # ============================================================
 
-hunger_wide <- dat_main_final |>
+hunger_wide <- analysis_session |>
+  filter(!is.na(planned_condition), !is.na(hunger_hunger)) |>
   select(fastress_id, planned_condition, hunger_hunger) |>
+  distinct() |>
   pivot_wider(
     names_from = planned_condition,
     values_from = hunger_hunger
   )
+
 hunger_wide <- hunger_wide |>
   mutate(
     fasted = readr::parse_number(as.character(fasted)),
@@ -841,7 +820,7 @@ model_summary_pack <- function(m0, m1, dat, outcome) {
 results_main <- list()
 
 # ------------------------------------------------------------
-# 1) Outcome: total_kcal => RQ1, H1
+# Outcome: total_kcal => RQ1, H1
 # ------------------------------------------------------------
 m0_total <- lmer(total_kcal ~ order_group + (1 | subject), data = dat_main_final, REML = FALSE)
 m1_total <- lmer(total_kcal ~ planned_condition + order_group + (1 | subject), data = dat_main_final, REML = FALSE)
@@ -851,7 +830,7 @@ anova(m0_total, m1_total)
 results_main[["total_kcal"]] <- list(m0 = m0_total, m1 = m1_total)
 
 # ------------------------------------------------------------
-# 2) Outcome: high_kcal
+# Outcome: high_kcal
 # ------------------------------------------------------------
 m0_high <- lmer(high_kcal ~ order_group + (1 | subject), data = dat_main_final, REML = FALSE)
 m1_high <- lmer(high_kcal ~ planned_condition + order_group + (1 | subject), data = dat_main_final, REML = FALSE)
@@ -863,7 +842,7 @@ confint(m1_high, method = "Wald")
 results_main[["high_kcal"]] <- list(m0 = m0_high, m1 = m1_high)
 
 # ------------------------------------------------------------
-# 3) Outcome: low_kcal
+# Outcome: low_kcal
 # ------------------------------------------------------------
 m0_low <- lmer(low_kcal ~ order_group + (1 | subject), data = dat_main_final, REML = FALSE)
 m1_low <- lmer(low_kcal ~ planned_condition + order_group + (1 | subject), data = dat_main_final, REML = FALSE)
@@ -875,7 +854,7 @@ confint(m1_low, method = "Wald")
 results_main[["low_kcal"]] <- list(m0 = m0_low, m1 = m1_low)
 
 # ------------------------------------------------------------
-# 4) Outcome: prop_high_kcal
+# Outcome: prop_high_kcal
 # ------------------------------------------------------------
 m0_prop <- lmer(prop_high_kcal ~ order_group + (1 | subject), data = dat_main_final, REML = FALSE)
 m1_prop <- lmer(prop_high_kcal ~ planned_condition + order_group + (1 | subject), data = dat_main_final, REML = FALSE)
@@ -887,6 +866,31 @@ confint(m1_prop, method = "Wald")
 
 results_main[["prop_high_kcal"]] <- list(m0 = m0_prop, m1 = m1_prop)
 
+
+```
+
+## Test Session Effects
+
+```{r}
+# ============================================================
+# Sensitivität: Periodeneffekt von session (T1 vs T2)
+# ============================================================
+
+m_period0 <- lmer(
+  total_kcal ~ planned_condition + order_group + (1 | subject),
+  data = dat_main_final,
+  REML = FALSE
+)
+
+m_period1 <- lmer(
+  total_kcal ~ planned_condition + session + order_group + (1 | subject),
+  data = dat_main_final,
+  REML = FALSE
+)
+
+anova(m_period0, m_period1)
+summary(m_period1)
+confint(m_period1, method = "Wald")
 ```
 
 # Moderation analyses

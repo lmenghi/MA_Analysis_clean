@@ -1875,24 +1875,36 @@ paired_summary
 # Analysis samples: explicit objects for later models
 # ============================================================
 
-# Session-level sample: all available sessions with food outcome and planned condition
+# Alle Sessions mit gueltiger Condition und gueltigem Outcome
 analysis_session_sample <- analysis_session |>
   filter(!is.na(planned_condition), !is.na(total_kcal))
 
-# Paired within-subject sample: only participants with both sessions in the session-level sample
-analysis_paired_sample <- analysis_session_sample |>
-  distinct(fastress_id, session) |>
-  count(fastress_id, name = "n_sessions") |>
-  filter(n_sessions == 2) |>
-  pull(fastress_id) |>
-  (\(ids) analysis_session_sample |> filter(fastress_id %in% ids))()
+# Primäres Paarsample:
+# - 2 Sessions
+# - 2 Conditions
+paired_ids_main <- analysis_session_sample |>
+  group_by(fastress_id) |>
+  summarise(
+    n_sessions = n_distinct(session),
+    n_conditions = n_distinct(planned_condition),
+    .groups = "drop"
+  ) |>
+  filter(n_sessions == 2, n_conditions == 2) |>
+  pull(fastress_id)
 
-# Quick sanity checks
-analysis_session_sample |>
-  summarise(n_rows = n(), n_ids = n_distinct(fastress_id))
+analysis_paired_main <- analysis_session_sample |>
+  filter(fastress_id %in% paired_ids_main)
 
-analysis_paired_sample |>
-  summarise(n_rows = n(), n_ids = n_distinct(fastress_id))
+# Sanity checks
+analysis_paired_main |>
+  group_by(fastress_id) |>
+  summarise(
+    n_rows = n(),
+    n_sessions = n_distinct(session),
+    n_conditions = n_distinct(planned_condition),
+    .groups = "drop"
+  ) |>
+  count(n_rows, n_sessions, n_conditions)
 ```
 
 # Save cleaned datasets
@@ -1907,6 +1919,8 @@ cat("Cleaning file rendered at:", Sys.time(), "\n")
 dir.create("data_clean", showWarnings = FALSE)
 
 saveRDS(analysis_session, "data_clean/analysis_session.rds")
+saveRDS(analysis_session_sample, "data_clean/analysis_session_sample.rds")
+saveRDS(analysis_paired_main, "data_clean/analysis_paired_main.rds")
 saveRDS(condition_check, "data_clean/condition_check.rds")
 saveRDS(stress_indices_per_session, "data_clean/stress_indices_per_session.rds")
 saveRDS(stress_person, "data_clean/stress_person.rds")
