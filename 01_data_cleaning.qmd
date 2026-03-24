@@ -26,6 +26,9 @@ editor: visual
 ## Load packages and helper functions
 
 ```{r}
+#| echo: false
+#| warning: false
+
 # #install.packages("readr")      # schnelles, robustes Einlesen von csv Dateien
 # #install.packages("readxl")     # Einlesen von xlsx Dateien
 # #install.packages("dplyr")      # Datenmanipulation
@@ -53,6 +56,7 @@ library(tibble)     # moderne Datenframes mit besserer Ausgabe
 library(ggplot2)    # Visualisierungen
 library(lme4)       # lineare gemischte Modelle
 library(lmerTest)   # p Werte und Tests fuer lmer Modelle
+library(flextable)  # tables output
 
 
 valid_id_pattern <- "^sub-\\d+$"
@@ -61,6 +65,24 @@ valid_id_pattern <- "^sub-\\d+$"
 parse_num <- function(x) {
   readr::parse_number(stringr::str_replace(as.character(x), ",", "."))
 }
+
+
+# Global options
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
+
+# ggplot theme 
+s <- 20 # size
+sh <- c(21, 2) # shapes
+# create theme
+theme_main <- theme_classic(base_size = s) + # minimal, gdocs
+  theme(
+    # panel.grid.major = element_line(),
+    legend.position = "bottom",
+    strip.background = element_blank(),   # Remove background of facet label area
+    strip.text = element_text(face = "bold")  # Customize text appearance
+  )
+# set theme
+ggplot2::theme_set(theme_main)
 
 
 ```
@@ -104,49 +126,62 @@ stress_t2 <- read_csv(
 ) |>
   clean_names() |>
   mutate(session = "T2")
+```
 
+**Subjects T1 and T2:** // not sure if you need both, the sliced header here, and the participant list below.
+
+```{r}
 # Quick QC
-food_t1 |> select(fastress_id) |> slice_head(n = 10)
-
+food_t1 |> arrange(fastress_id) |> select(fastress_id) |> slice_head(n = 10)
+food_t2 |> arrange(fastress_id) |> select(fastress_id) |> slice_head(n = 10)
 
 ```
 
 ## Initial ID cleaning and validity checks
 
 ```{r}
-
 ## --------------------------------------------------
 ## Remove non-valid example rows and empty IDs
 ## --------------------------------------------------
-
-
 food_t1 <- food_t1 |>
   mutate(fastress_id = str_to_lower(fastress_id)) |>
   filter(!is.na(fastress_id),
-         str_detect(fastress_id, valid_id_pattern))
+         str_detect(fastress_id, valid_id_pattern))|>
+  select(fastress_id, session, everything())
 
 food_t2 <- food_t2 |>
   mutate(fastress_id = str_to_lower(fastress_id)) |>
   filter(!is.na(fastress_id),
-         str_detect(fastress_id, valid_id_pattern))
+         str_detect(fastress_id, valid_id_pattern))|>
+  select(fastress_id, session, everything())
 
 stress_t1 <- stress_t1 |>
   mutate(fastress_id = str_to_lower(fastress_id)) |>
   filter(!is.na(fastress_id),
-         str_detect(fastress_id, valid_id_pattern))
+         str_detect(fastress_id, valid_id_pattern)) |>
+  select(fastress_id, session, everything())
 
 stress_t2 <- stress_t2 |>
   mutate(fastress_id = str_to_lower(fastress_id)) |>
   filter(!is.na(fastress_id),
-         str_detect(fastress_id, valid_id_pattern))
+         str_detect(fastress_id, valid_id_pattern)) |>
+  select(fastress_id, session, everything())
+```
 
+**Number of participants T1:**
 
+```{r}
 food_t1 |> summarise(
   n_rows = n(),
   n_unique_id = n_distinct(fastress_id)
 )
+```
 
-food_t1 |> distinct(fastress_id)
+**Participant list T1 and T2:**
+
+```{r}
+food_t1 |> arrange(fastress_id) |> distinct(fastress_id)
+food_t2 |> arrange(fastress_id) |> distinct(fastress_id) 
 
 #wenn ich hier nur sub-xxx sehe ist alle korrekt
 
@@ -169,7 +204,7 @@ stress_t2 |> count(fastress_id) |> filter(n > 1)
 
 ## Build combined stress dataset
 
-stress_all = T1 and T2 listed one below the other; then check: Are there any duplicates per person per session? Do people have 1 or 2 sessions?
+stress_all = T1 and T2 combined; then check: Are there any duplicates per person per session? Do people have 1 or 2 sessions?
 
 ```{r}
 # --------------------------------------------------
@@ -180,16 +215,18 @@ stress_all <- bind_rows(stress_t1, stress_t2)
 
 # Quick QC: rows and unique IDs
 stress_all |>
+  group_by(session) |>
   summarise(
     n_rows = n(),
     n_unique_id = n_distinct(fastress_id),
     n_sessions = n_distinct(session)
-  )
+  ) |> 
+  flextable()
 
 
 ```
 
-## Verify one row per person and session
+## Verify one row per person and session // this seems redundant with the table above?
 
 ```{r}
 # Check: one row per person x session (should be empty)
@@ -200,7 +237,7 @@ stress_all |>
 # Overview: how many sessions per person exist
 stress_all |>
   distinct(fastress_id, session) |>
-  count(fastress_id) |>
+  count(fastress_id) |> 
   count(n)
 ```
 
@@ -318,7 +355,7 @@ food_long_raw <- food_all |>
     cols = ends_with(c("_g_pre", "_g_post")),
     names_to = "variable",
     values_to = "grams"
-  ) |>
+  ) |> 
   mutate(
   grams = parse_num(grams),
   phase = if_else(str_detect(variable, "_g_pre$"), "pre", "post"),
@@ -477,47 +514,40 @@ In addition to food intake and stress ratings, questionnaire data and blood samp
 # --------------------------------------------------
 # Import anthropo + blood sampling data (T1/T2)
 # --------------------------------------------------
+# function: clean blood data
+clean_blood <- function(df, session) {
+  df |>
+    read_csv(
+      show_col_types = FALSE,
+      col_types = cols(.default = col_character())
+    ) |>
+    clean_names() |>
+    mutate(
+      session = session,
+      ketones_pre  = parse_num(ketones_pre),
+      ketones_post = parse_num(ketones_post),
+      glucose_pre  = parse_num(glucose_pre),
+      glucose_post = parse_num(glucose_post),
+      age = parse_num(age),
+      bmi_automatic_should_be_18_5_25 = parse_num(bmi_automatic_should_be_18_5_25),
+      fastress_id = str_to_lower(fastress_id)
+    ) |>
+    filter(!is.na(fastress_id), str_detect(fastress_id, valid_id_pattern)) |>
+    select(fastress_id, session, everything())
+}
+
+# apply function
 list.files("data_raw")
 
-
-blood_t1 <- read_csv(
+blood_t1 <- clean_blood(
   "data_raw/FASTRESS_measures-anthropo-blood(session T1).csv",
-  show_col_types = FALSE,
-  col_types = cols(.default = col_character())
-) |>
-  clean_names() |>
-  mutate(session = "T1") |>
-  mutate(
-    ketones_pre  = parse_num(ketones_pre),
-    ketones_post = parse_num(ketones_post),
-    glucose_pre  = parse_num(glucose_pre),
-    glucose_post = parse_num(glucose_post),
-    age = parse_num(age),
-    bmi_automatic_should_be_18_5_25 = parse_num(bmi_automatic_should_be_18_5_25)
-  ) |>
-  mutate(fastress_id = str_to_lower(fastress_id)) |>
-  filter(!is.na(fastress_id), str_detect(fastress_id, valid_id_pattern))
+  "T1"
+)
 
-
-
-blood_t2 <- read_csv(
+blood_t2 <- clean_blood(
   "data_raw/FASTRESS_measures-anthropo-blood(session T2).csv",
-  show_col_types = FALSE,
-  col_types = cols(.default = col_character())
-) |>
-  clean_names() |>
-  mutate(session = "T2") |>
-  mutate(
-    ketones_pre  = parse_num(ketones_pre),
-    ketones_post = parse_num(ketones_post),
-    glucose_pre  = parse_num(glucose_pre),
-    glucose_post = parse_num(glucose_post),
-    age = parse_num(age),
-    bmi_automatic_should_be_18_5_25 = parse_num(bmi_automatic_should_be_18_5_25)
-  ) |>
-  mutate(fastress_id = str_to_lower(fastress_id)) |>
-  filter(!is.na(fastress_id), str_detect(fastress_id, valid_id_pattern))
-
+  "T2"
+)
 
 # Quick QC
 blood_t1 |> summarise(n_rows = n(), n_unique_id = n_distinct(fastress_id))
@@ -529,7 +559,6 @@ blood_t2 |> count(fastress_id) |> filter(n > 1)
 # --------------------------------------------------
 # Combine blood data across sessions
 # --------------------------------------------------
-
 blood_all <- bind_rows(blood_t1, blood_t2)
 
 blood_all |>
@@ -588,14 +617,42 @@ blood_condition <- blood_all |>
     )
   ) |>
   select(fastress_id, session, condition)
+```
 
+Conditions overall:
+
+```{r}
 # Sanity checks
-blood_condition |> count(condition)
-blood_condition |> count(session, condition)
+blood_condition |> count(condition) |> flextable()
+```
 
+Conditions per session:
 
+```{r}
+blood_condition |> count(session, condition) |> flextable()
 
 ```
+
+Distribution:
+
+```{r, fig.height=8}
+blood_long <- blood_all |>
+  select(metabolic_state_s_f, glucose_pre, glucose_post, ketones_pre, ketones_post) |>
+  pivot_longer(
+    cols = c(glucose_pre, glucose_post, ketones_pre, ketones_post),
+    names_to = c("marker", "time"),
+    names_sep = "_",
+    values_to = "value"
+  )
+
+ggplot(blood_long, aes(x = value, linetype = time)) +
+  geom_density() +
+  # geom_histogram(aes(fill = time)) +
+  scale_linetype_manual(values = c(pre = "solid", post = "dashed")) +
+  facet_wrap(metabolic_state_s_f ~ marker, scales = "free") +
+  labs(x = "Value", y = "Density")
+```
+
 
 ### Planned condition (Randomisierung)
 
@@ -603,7 +660,6 @@ blood_condition |> count(session, condition)
 # ============================================================
 # Planned condition (randomized metabolic state)
 # ============================================================
-
 planned_condition <- blood_all |>
   transmute(
     fastress_id,
@@ -615,10 +671,19 @@ planned_condition <- blood_all |>
     )
   ) |>
   distinct(fastress_id, session, .keep_all = TRUE)
+```
 
+Conditions overall (planned):
+
+```{r}
 # Sanity checks
-planned_condition |> count(planned_condition)
-planned_condition |> count(session, planned_condition)
+planned_condition |> count(planned_condition) |> flextable()
+```
+
+Conditions per session (planned):
+
+```{r}
+planned_condition |> count(session, planned_condition) |> flextable()
 
 ```
 
@@ -634,13 +699,16 @@ Check whether “fasted” and “satiated” occur roughly the same number of t
 # ============================================================
 
 planned_condition |>
-  count(session, planned_condition)
+  count(session, planned_condition) |> 
+  flextable()
 
 planned_condition |>
   count(planned_condition, session) |>
   group_by(planned_condition) |>
   mutate(prop = n / sum(n)) |>
-  ungroup()
+  ungroup() |> 
+  flextable()
+
 
 ```
 
@@ -705,7 +773,8 @@ blood_condition <- blood_condition_full |>
 
 # QC: Verteilung und Konflikte
 blood_condition_full |>
-  count(support_class)
+  count(support_class)|> 
+  flextable()
 
 blood_condition_full |>
   summarise(
@@ -715,7 +784,9 @@ blood_condition_full |>
     n_conflict = sum(support_class == "conflict_tie_break_planned"),
     n_no_support = sum(support_class == "no_support"),
     perc_no_support = mean(support_class == "no_support") * 100
-  )
+  ) |> 
+  flextable()
+
 ```
 
 ### Manipulation Check Condition and Blood
@@ -733,7 +804,8 @@ condition_check <- planned_condition |>
 # Crosstab
 condition_check |>
   filter(!is.na(planned_condition), !is.na(measured_condition)) |>
-  count(planned_condition, measured_condition)
+  count(planned_condition, measured_condition) |> 
+  flextable()
 
 # Agreement rate
 condition_check |>
@@ -743,26 +815,30 @@ condition_check |>
   n_sessions = n(),
   n_match = sum(match, na.rm = TRUE),
   perc_match = mean(match, na.rm = TRUE) * 100
-)
-
+) |> 
+  flextable()
 
 # Number of mismatches
 condition_check |>
   filter(!is.na(planned_condition), !is.na(measured_condition)) |>
   mutate(match = planned_condition == measured_condition) |>
-  count(match)
+  count(match) |> 
+  flextable()
 
 # Welche Sessions waren Konflikt und wurden per planned_condition entschieden
 blood_condition_full |>
   filter(support_class == "conflict_tie_break_planned") |>
-  select(fastress_id, session, planned_condition, measured_condition)
+  select(fastress_id, session, planned_condition, measured_condition) |> 
+  flextable()
 
 # -> Wenn alles stimmt, ist bei diesen Zeilen measured_condition immer gleich planned_condition.
 
 
 ```
 
-**planned_condition** = Design variable (randomization) -\> for primary analyses **blood_condition** = Compliance/manipulation check -\> for validation condition_check = Documentation of whether the manipulation actually worked
+**planned_condition** = Design variable (randomization) -\> for primary analyses 
+
+**blood_condition** = Compliance/manipulation check -\> for validation condition_check = Documentation of whether the manipulation actually worked
 
 ==\> Perform all primary analyses using planned_condition.
 
@@ -780,7 +856,9 @@ condition_check |>
     session,
     planned_condition,
     measured_condition
-  )
+  ) |> 
+  flextable()
+
 # These sessions were retained for all main analyses,
 # as experimental condition was defined by randomization.
 
@@ -803,7 +881,9 @@ blood_all |>
     ketones_pre_SD = sd(ketones_pre, na.rm = TRUE),
     glucose_pre_M = mean(glucose_pre, na.rm = TRUE),
     glucose_pre_SD = sd(glucose_pre, na.rm = TRUE)
-  )
+  ) |> 
+  flextable()
+
 
 ```
 
@@ -883,7 +963,7 @@ survey_t1 |>
 
 ```
 
-sub-002 appears twice -\> both are T1 -\> keep the first one filled out
+sub-002 appears twice -\> both are T1 -\> keep the first one filled out // you did verify this, right?
 
 Keep exactly one row per person and session -\> the first one filled out. The second (incorrectly filled out T1) is discarded.
 
@@ -990,7 +1070,6 @@ hunger_long |>
 # Survey scoring: Trait Moderatoren aus Survey T1 und T2
 # ============================================================
 
-
 # Funktion für Skalenmittelwerte (mit Mindestanzahl beantworteter Items)
 row_mean_safe <- function(df, items, min_n = 3) {
   items <- intersect(items, names(df))
@@ -1013,7 +1092,7 @@ reverse_score <- function(x, min_val = 1, max_val = 5) {
   ifelse(is.na(x_num), NA_real_, (max_val + min_val) - x_num)
 }
 
-# Items finden (passen zu clean_names() deiner echten Dateien)
+# Items finden (passen zu clean_names() der echten Dateien)
 items_sses   <- names(survey_all) |> str_subset("^sses_sses\\d+$")
 
 items_cerq <- names(survey_all) |> str_subset("^cerq_cerq\\d+$")
@@ -1031,7 +1110,6 @@ if (length(missing_cerq) > 0) {
 items_srs <- names(survey_all) |> str_subset("^srs\\d+_srs\\d+$")
 
 # STADI Trait Anxiety (nur T-A Items laut Manual)
-
 stadit_trait_anxiety_items <- c(
   "stadit_stadit2",
   "stadit_stadit6",
