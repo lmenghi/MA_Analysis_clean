@@ -24,6 +24,9 @@ editor: visual
 ## Load packages and analysis datasets
 
 ```{r}
+#| echo: false
+#| warning: false
+
 options(scipen = 999)
 
 library(dplyr)
@@ -34,6 +37,8 @@ library(ggplot2)
 library(lme4)
 library(lmerTest)
 library(readr)
+library(flextable)  # tables output
+library(gtsummary)  # tables
 
 analysis_session <- readRDS("data_clean/analysis_session.rds")
 analysis_session_sample <- readRDS("data_clean/analysis_session_sample.rds")
@@ -286,7 +291,8 @@ If anova(m_order_add, m_order_int) is not significant –\> then there is no evi
 
 If anova(m_base, m_order_add) is significant –\> then there is a general difference between fasted_first and satiated_first, independent of condition
 
-# Sample characteristics
+
+# Sample 
 
 ## Demographic characteristics of the final analysis sample
 
@@ -308,35 +314,48 @@ demo_analysis <- dat_main_final |>
     by = "fastress_id"
   )
 
-# Gesamt N
-N_total <- nrow(demo_analysis)
+# # Gesamt N
+# N_total <- nrow(demo_analysis)
+# 
+# # Alter
+# age_M   <- mean(demo_analysis$age, na.rm = TRUE)
+# age_SD  <- sd(demo_analysis$age, na.rm = TRUE)
+# age_min <- min(demo_analysis$age, na.rm = TRUE)
+# age_max <- max(demo_analysis$age, na.rm = TRUE)
+# 
+# # Geschlecht
+# gender_tab <- demo_analysis |>
+#   count(sex_male_m_female_f) |>
+#   mutate(percent = round(n / N_total * 100, 1))
+# 
+# # Bildung
+# edu_tab <- demo_analysis |>
+#   count(education) |>
+#   mutate(percent = round(n / N_total * 100, 1))
+# 
+# N_total
+# age_M
+# age_SD
+# age_min
+# age_max
+# gender_tab
+# edu_tab
 
-# Alter
-age_M   <- mean(demo_analysis$age, na.rm = TRUE)
-age_SD  <- sd(demo_analysis$age, na.rm = TRUE)
-age_min <- min(demo_analysis$age, na.rm = TRUE)
-age_max <- max(demo_analysis$age, na.rm = TRUE)
-
-# Geschlecht
-gender_tab <- demo_analysis |>
-  count(sex_male_m_female_f) |>
-  mutate(percent = round(n / N_total * 100, 1))
-
-# Bildung
-edu_tab <- demo_analysis |>
-  count(education) |>
-  mutate(percent = round(n / N_total * 100, 1))
-
-N_total
-age_M
-age_SD
-age_min
-age_max
-gender_tab
-edu_tab
+demo_analysis |> 
+  tbl_summary(
+    type = list(age ~ "continuous"),
+    statistic = list(
+      all_continuous() ~ "{mean} ({sd}), [{min}, {max}]",
+      all_categorical() ~ "{n} ({p}%)"
+    ),
+    digits = list(all_continuous() ~ c(2,2,2,2)),
+    missing_text = "(missing)", 
+    include = -fastress_id  # remove subject from tested variables 
+  ) %>%
+  bold_labels()
 ```
 
-# Assumption checks
+# Assumptions
 
 ## Paired comparisons
 
@@ -365,7 +384,7 @@ check_paired_t <- function(x, y, label = "difference") {
 
 # Manipulation checks
 
-## Subjective stress ratings
+## Stress ratings
 
 ```{r}
 # ============================================================
