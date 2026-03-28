@@ -1701,7 +1701,7 @@ All three outputs should be empty.
 
 ```{r}
 # ============================================================
-# Merge QC 3: Verify uniqueness of join keys in right tables
+# Verify uniqueness of join keys in right tables
 # ============================================================
 
 # planned_condition must have unique fastress_id plus session

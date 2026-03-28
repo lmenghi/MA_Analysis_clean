@@ -28,6 +28,9 @@ editor: visual
 #| warning: false
 
 options(scipen = 999)
+parse_num <- function(x) {
+  readr::parse_number(stringr::str_replace(as.character(x), ",", "."))
+}
 
 library(dplyr)
 library(tidyr)
@@ -39,6 +42,7 @@ library(lmerTest)
 library(readr)
 library(flextable)  # tables output
 library(gtsummary)  # tables
+library(broom.mixed)
 
 analysis_session <- readRDS("data_clean/analysis_session.rds")
 analysis_session_sample <- readRDS("data_clean/analysis_session_sample.rds")
@@ -51,11 +55,37 @@ stress_indices_per_session <- readRDS("data_clean/stress_indices_per_session.rds
 blood_person <- readRDS("data_clean/blood_person.rds")
 education_person <- readRDS("data_clean/education_person.rds")
 
+# Global options
+knitr::opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
+
+# ggplot theme 
+s <- 20 # size
+sh <- c(21, 2) # shapes
+# create theme
+theme_main <- theme_classic(base_size = s) + # minimal, gdocs
+  theme(
+    # panel.grid.major = element_line(),
+    legend.position = "bottom",
+    strip.background = element_blank(),   # Remove background of facet label area
+    strip.text = element_text(face = "bold")  # Customize text appearance
+  )
+# set theme
+ggplot2::theme_set(theme_main)
+
+model_fixed_table <- function(model, digits = 3) {
+  broom.mixed::tidy(model, effects = "fixed", conf.int = TRUE) |>
+    mutate(across(where(is.numeric), ~ round(.x, digits))) |>
+    flextable() |>
+    autofit()
+}
+
+
 ```
 
 ## Verify imported analysis objects
 
 ```{r}
+#| include: false
 stopifnot("subject" %in% names(analysis_session))
 stopifnot(is.factor(analysis_session$subject))
 stopifnot("planned_condition" %in% names(analysis_session))
@@ -64,25 +94,11 @@ stopifnot("planned_condition" %in% names(analysis_session))
 
 # Analysis sample setup
 
-# Analysis
+-   `dat_main = fixed main sample from the cleaning script`
 
-## Define complete case sample
+-   `ids_complete = exactly those individuals from this main sample`
 
-```{r}
-# --------------------------------------------------
-# Sample sizes for planned analyses
-# --------------------------------------------------
-
-
-# Hauptsample: complete cases für within subject Analysen
-ids_complete <- analysis_session |>
-  filter(!is.na(planned_condition)) |>
-  distinct(fastress_id, session) |>
-  count(fastress_id, name = "n_sessions") |>
-  filter(n_sessions == 2) |>
-  pull(fastress_id)
-
-```
+-   `dat_main_final = the same dataset plus order_group`
 
 ## Create fixed analysis samples
 
@@ -91,7 +107,13 @@ ids_complete <- analysis_session |>
 # Analyse Setup: fixes Hauptsample aus dem Cleaning-Skript
 # ============================================================
 
+# Main paired within-subject analysis sample
 dat_main <- analysis_paired_main
+
+# IDs des finalen Hauptsamples
+ids_complete <- dat_main |>
+  distinct(fastress_id) |>
+  pull(fastress_id)
 
 # QC
 dat_main |>
@@ -283,6 +305,8 @@ anova(m_order_add, m_order_int)
 summary(m_order_int)
 confint(m_order_int, method = "Wald")
 
+model_fixed_table(m_order_int)
+
 ```
 
 **Interpretation**
@@ -471,8 +495,8 @@ blood_wide |>
 # Werte robust zu numerisch konvertieren
 blood_wide <- blood_wide |>
   mutate(
-    across(starts_with("ketones_pre"), ~ readr::parse_number(as.character(.x))),
-    across(starts_with("glucose_pre"), ~ readr::parse_number(as.character(.x)))
+    across(starts_with("ketones_pre"), parse_num),
+across(starts_with("glucose_pre"), parse_num)
   )
 
 # Voraussetzungen prüfen
@@ -503,8 +527,8 @@ hunger_wide <- analysis_session |>
 
 hunger_wide <- hunger_wide |>
   mutate(
-    fasted = readr::parse_number(as.character(fasted)),
-    satiated = readr::parse_number(as.character(satiated))
+    fasted = parse_num(fasted),
+satiated = parse_num(satiated)
   )
 
 # QC
@@ -590,7 +614,7 @@ sample_n <- tibble(
   )
 )
 
-sample_n
+sample_n |> flextable()
 ```
 
 ## Sample flow overview
@@ -635,7 +659,7 @@ sample_flow_analysis <- tibble(
   )
 )
 
-sample_flow_analysis
+sample_flow_analysis |> flextable()
 ```
 
 # Preliminary outcome checks
@@ -711,12 +735,12 @@ analysis_session |>
     prop_high_M = mean(prop_high_kcal, na.rm = TRUE),
     prop_high_SD = sd(prop_high_kcal, na.rm = TRUE),
     .groups = "drop"
-  )
+  ) |> 
+  flextable()
 
 
-# Haupttabelle: nur für complete cases:
-analysis_session |>
-  filter(fastress_id %in% ids_complete, !is.na(planned_condition)) |>
+# Haupttabelle: nur für complete cases des finalen Hauptsamples
+dat_main_final |>
   group_by(planned_condition) |>
   summarise(
     n_obs = n(),
@@ -724,8 +748,8 @@ analysis_session |>
     total_kcal_M = mean(total_kcal, na.rm = TRUE),
     total_kcal_SD = sd(total_kcal, na.rm = TRUE),
     .groups = "drop"
-  )
-
+  ) |>
+  flextable()
 ```
 
 # Model specification
@@ -979,6 +1003,8 @@ anova(m_srs_add, m_srs_int)
 summary(m_srs_int)
 confint(m_srs_int, method = "Wald")
 
+model_fixed_table(m_srs_int)
+
 ```
 
 ### Moderation 2: CERQ
@@ -1012,6 +1038,7 @@ anova(m_cerq_adapt_add, m_cerq_adapt_int)
 summary(m_cerq_adapt_int)
 confint(m_cerq_adapt_int, method = "Wald")
 
+model_fixed_table(m_cerq_adapt_int)
 
 # CERQ maladaptive
 qc_mod_sample(dat_main_cerq_maladaptive, outcome = "total_kcal", mod = "cerq_maladaptive_c")
@@ -1031,6 +1058,8 @@ m_cerq_mal_int <- lmer(
 anova(m_cerq_mal_add, m_cerq_mal_int)
 summary(m_cerq_mal_int)
 confint(m_cerq_mal_int, method = "Wald")
+
+model_fixed_table(m_cerq_mal_int)
 
 
 ```
@@ -1062,6 +1091,8 @@ anova(m_stadit_add, m_stadit_int)
 summary(m_stadit_int)
 confint(m_stadit_int, method = "Wald")
 
+model_fixed_table(m_stadit_int)
+
 # high_kcal
 m_stadit_high_add <- lmer(
   high_kcal ~ planned_condition + stadit_c + order_group + (1 | subject),
@@ -1079,6 +1110,7 @@ anova(m_stadit_high_add, m_stadit_high_int)
 summary(m_stadit_high_int)
 confint(m_stadit_high_int, method = "Wald")
 
+model_fixed_table(m_stadit_high_int)
 
 ```
 
@@ -1110,6 +1142,8 @@ anova(m_edeq_add, m_edeq_int)
 summary(m_edeq_int)
 confint(m_edeq_int, method = "Wald")
 
+model_fixed_table(m_edeq_int)
+
 # ------------------------------------------------------------
 # H5b: Stress Eating (SSES)
 # Outcome: total_kcal
@@ -1135,7 +1169,7 @@ summary(m_sses_int)
 confint(m_sses_int, method = "Wald")
 
 
-
+model_fixed_table(m_sses_int)
 
 ```
 
@@ -1193,7 +1227,7 @@ mod_tests_total <- mod_tests_total |>
     sig_fdr = p_fdr < 0.05
   )
 
-mod_tests_total
+mod_tests_total |> flextable()
 ```
 
 # Sensitivity analyses
@@ -1206,29 +1240,20 @@ mod_tests_total
 
 ```{r}
 # ============================================================
-# Sensitivität: measured_condition und mismatch Flag in analysis_session
+# Sensitivität: mismatch Flag im finalen Hauptsample
 # ============================================================
 
-analysis_session2 <- analysis_session |>
+dat_main2 <- dat_main_final |>
+  select(-any_of("measured_condition")) |>
   left_join(
     condition_check |>
       select(fastress_id, session, measured_condition),
     by = c("fastress_id", "session")
   ) |>
   mutate(
-    mismatch = !is.na(measured_condition) & !is.na(planned_condition) & (measured_condition != planned_condition)
-  )
-
-# Hauptsample neu bauen
-dat_main2 <- analysis_session2 |>
-  filter(
-    fastress_id %in% ids_complete,
-    !is.na(planned_condition),
-    !is.na(total_kcal)
-  ) |>
-  left_join(
-    order_tbl |> select(fastress_id, order_group),
-    by = "fastress_id"
+    mismatch = !is.na(measured_condition) &
+               !is.na(planned_condition) &
+               measured_condition != planned_condition
   )
 
 ## QC
@@ -1241,7 +1266,24 @@ dat_main2 |>
 
 # Sensitivität Sample: ohne mismatch Sessions
 dat_main_nomismatch <- dat_main2 |>
-  filter(mismatch == FALSE | is.na(mismatch))
+  filter(mismatch == FALSE | is.na(mismatch)) |>
+  group_by(fastress_id) |>
+  filter(
+    n_distinct(session) == 2,
+    n_distinct(planned_condition) == 2
+  ) |>
+  ungroup()
+
+# QC: prüfen, ob das nomismatch-Sample weiterhin ein vollständiges within-subject Sample ist
+dat_main_nomismatch |>
+  group_by(fastress_id) |>
+  summarise(
+    n_rows = n(),
+    n_sessions = n_distinct(session),
+    n_conditions = n_distinct(planned_condition),
+    .groups = "drop"
+  ) |>
+  count(n_rows, n_sessions, n_conditions)
 
 # Vergleich Basismodell total_kcal
 mods_a <- fit_main_effect(dat = dat_main2, outcome = "total_kcal", use_random_slope = use_random_slope)
@@ -1403,10 +1445,6 @@ diag_df |>
 
 ## Extract report-ready results for the primary model
 
-**Was:** Nullmodell vergleichen, Konfidenzintervall für Condition Effekt, grobe Effektgroesse berichten.
-
-**Wieso:** Das brauche ich später 1 zu 1 im Ergebnisteil.
-
 ```{r}
 # ============================================================
 # Basismodell report ready (total_kcal)
@@ -1424,6 +1462,8 @@ confint(m1_total, method = "Wald")
 
 # Fixed Effects Tabelle kompakt
 summary(m1_total)
+
+model_fixed_table(m1_total)
 
 # Effektgrösse: Condition Effekt in SD Einheiten (bezogen auf dat_main)
 sd_total <- dat_main_final |>
