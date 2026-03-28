@@ -23,7 +23,7 @@ editor: visual
 
 # Preparation
 
-## Load packages and helper functions
+## Packages and helper functions
 
 ```{r}
 #| echo: false
@@ -137,7 +137,7 @@ food_t2 |> arrange(fastress_id) |> select(fastress_id) |> slice_head(n = 10)
 
 ```
 
-## Initial ID cleaning and validity checks
+## ID cleaning and validity checks
 
 ```{r}
 ## --------------------------------------------------
@@ -202,7 +202,7 @@ stress_t2 |> count(fastress_id) |> filter(n > 1)
 
 # Stress manipulation check
 
-## Build combined stress dataset
+## Stress data
 
 stress_all = T1 and T2 combined; then check: Are there any duplicates per person per session? Do people have 1 or 2 sessions?
 
@@ -225,23 +225,6 @@ stress_all |>
 
 
 ```
-
-## Verify one row per person and session // this seems redundant with the table above?
-
-```{r}
-# Check: one row per person x session (should be empty)
-stress_all |>
-  count(fastress_id, session) |>
-  filter(n > 1)
-
-# Overview: how many sessions per person exist
-stress_all |>
-  distinct(fastress_id, session) |>
-  count(fastress_id) |> 
-  count(n)
-```
-
-Manipulation check: Goal: show Strong \> Mild (and optionally Strong \> Baseline). Uses complete cases across sessions (participants with T1 and T2), but does NOT split the test by session.
 
 ```{r}
 
@@ -275,7 +258,7 @@ stopifnot(length(strong_cols) > 0)
 
 ```
 
-## Compute stress indices
+## Stress indices
 
 ```{r}
 
@@ -304,7 +287,7 @@ stress_indices_per_session <- stress_all_complete |>
 
 ```
 
-## Aggregate stress ratings to person level
+## Stress summary
 
 ```{r}
 # Aggregate to person level (mean across sessions)
@@ -324,9 +307,9 @@ stress_person <- stress_indices_per_session |>
   )
 ```
 
-# Food data preparation
+# Food data 
 
-## Combine food files
+## Food merge
 
 ```{r}
 # --------------------------------------------------
@@ -343,7 +326,7 @@ food_all |>
 
 ```
 
-## Reshape food data to long format
+## Food reshape to long format
 
 ```{r}
 # ============================================================
@@ -390,7 +373,7 @@ food_long_raw |> count(flag_negative)
 
 ```
 
-## Compute gram intake
+## Gram intake
 
 ```{r}
 
@@ -440,7 +423,7 @@ food_session_complete <- food_session_raw |>
   filter(fastress_id %in% food_ids_complete)
 ```
 
-## Inspect piece counts
+## Piece counts
 
 ```{r}
 # ============================================================
@@ -503,11 +486,11 @@ food_long_pcs |>
   select(fastress_id, session, item, pre, post, consumed_pcs)
 ```
 
-# Blood data preparation
+# Blood data 
 
 In addition to food intake and stress ratings, questionnaire data and blood sampling data were imported to enable manipulation checks and the computation of psychological moderator variables.
 
-## Import blood and anthropometric data
+## Blood import
 
 ```{r}
 
@@ -619,21 +602,21 @@ blood_condition <- blood_all |>
   select(fastress_id, session, condition)
 ```
 
-Conditions overall:
+**Conditions overall:**
 
 ```{r}
 # Sanity checks
 blood_condition |> count(condition) |> flextable()
 ```
 
-Conditions per session:
+**Conditions per session:**
 
 ```{r}
 blood_condition |> count(session, condition) |> flextable()
 
 ```
 
-Distribution:
+**Distribution:**
 
 ```{r, fig.height=8}
 blood_long <- blood_all |>
@@ -653,7 +636,7 @@ ggplot(blood_long, aes(x = value, linetype = time)) +
   labs(x = "Value", y = "Density")
 ```
 
-### Planned condition (Randomisierung)
+### Planned condition
 
 ```{r}
 # ============================================================
@@ -672,14 +655,14 @@ planned_condition <- blood_all |>
   distinct(fastress_id, session, .keep_all = TRUE)
 ```
 
-Conditions overall (planned):
+**Conditions overall (planned):**
 
 ```{r}
 # Sanity checks
 planned_condition |> count(planned_condition) |> flextable()
 ```
 
-Conditions per session (planned):
+**Conditions per session (planned):**
 
 ```{r}
 planned_condition |> count(session, planned_condition) |> flextable()
@@ -688,9 +671,9 @@ planned_condition |> count(session, planned_condition) |> flextable()
 
 planned_condition: a table containing the randomized condition, i.e., what was specified in the design.
 
-## Compare planned and measured condition (Randomisation-Check)
+## Condition check 
 
-Check whether “fasted” and “satiated” occur roughly the same number of times in T1 and T2.
+Randomisation-Check: Check whether “fasted” and “satiated” occur roughly the same number of times in T1 and T2.
 
 ```{r}
 # ============================================================
@@ -711,7 +694,7 @@ planned_condition |>
 
 ```
 
-## Describe blood markers by condition
+## Blood markers 
 
 ```{r}
 # ============================================================
@@ -886,9 +869,9 @@ blood_all |>
 
 ```
 
-# Survey data preparation
+# Survey data 
 
-## Import questionnaire data
+## Survey import
 
 ```{r}
 
@@ -937,7 +920,7 @@ survey_t1 |> distinct(fastress_id) |> slice_head(n = 10)
 
 ```
 
-## Remove duplicate submissions
+## Survey duplicate 
 
 ```{r}
 
@@ -991,7 +974,7 @@ survey_t1 |> count(fastress_id) |> filter(n > 1)
 
 ```
 
-## Combine survey files
+## Survey merge
 
 ```{r}
 
@@ -1029,7 +1012,7 @@ survey_all |>
 
 ```
 
-## Extract hunger ratings
+## Hunger ratings
 
 ```{r}
 # ============================================================
@@ -1062,7 +1045,7 @@ hunger_long |>
   filter(n > 1)
 ```
 
-## Survey scoring: Trait Moderatoren aus Survey T1 und T2
+## Trait scoring (T1 & T2)
 
 ```{r}
 # ============================================================
@@ -1133,7 +1116,7 @@ c(
 
 ```
 
-### Umpolung
+### Reverse scoring
 
 ```{r}
 # ============================================================
@@ -1226,7 +1209,7 @@ if (length(missing_sub) > 0) {
 
 ```
 
-### Skalen berechnen
+### Scale scoring
 
 ```{r}
 
@@ -1424,11 +1407,7 @@ table1_sample
 
 ```
 
-## Sample overview and ID matching
-
-The goal of this section: To know who appears in which datasets before merging anything or performing any analyses.
-
-There are multiple datasets: Not every person is fully represented in all of them. --\> That’s why we need to determine which people are included in which datasets.
+## Sample overview
 
 ```{r}
 # --------------------------------------------------
@@ -1488,7 +1467,7 @@ TRUE FALSE TRUE = Food + Survey, but no Blood
 
 ==\> Important for the results section
 
-## Descriptives
+## Sample Descriptives
 
 Total sample (all with at least one valid session)
 
@@ -1518,7 +1497,7 @@ ids_overview |>
 
 ```
 
-## Demographic descriptives
+## Demographics
 
 ```{r}
 # ============================================================
@@ -1554,9 +1533,9 @@ blood_person |> count(sex_male_m_female_f)
 
 # Build analysis dataset
 
-## Merge session level variables
+## Session merge
 
-### Outcome Variablen für Food final bauen: kcal und High vs Low
+### Food outcomes
 
 -   total_kcal → total energy intake
 
@@ -1721,7 +1700,9 @@ survey_person |>
   filter(n > 1)
 ```
 
-This is the main dataset:
+## Analysis session
+
+**This is the main dataset:**
 
 ```{r}
 # ============================================================
@@ -1759,7 +1740,7 @@ analysis_session |> count(session, planned_condition)
 
 ```
 
-### Check after joining `planned_condition` and `blood_all`
+**Check after joining `planned_condition` and `blood_all`**
 
 -   `n_rows` and `n_pairs` should be equal
 
@@ -1786,7 +1767,7 @@ analysis_session |>
   filter(n > 1)
 ```
 
-## Merge Trait Moderatoren
+## Trait merge
 
 -\> in analysis_session + Zentrierung
 
@@ -1842,7 +1823,7 @@ analysis_session |>
 
 ```
 
-### Check for row inflation after joining survey traits
+### Merge QC 
 
 -   n_rows and n_pairs should be equal
 
@@ -1870,7 +1851,7 @@ analysis_session |>
 
 ## Missingness Reporting
 
-### Session-Level
+### Session missingness
 
 ```{r}
 # ============================================================
@@ -1908,7 +1889,7 @@ missing_session <- analysis_session |>
 missing_session
 ```
 
-## Person-Level
+### Person missingness
 
 ```{r}
 # ============================================================
@@ -1945,7 +1926,7 @@ paired_summary <- analysis_session |>
 paired_summary
 ```
 
-## Define analysis samples
+## Analysis samples
 
 ```{r}
 # ============================================================
@@ -2006,3 +1987,4 @@ saveRDS(blood_person, "data_clean/blood_person.rds")
 saveRDS(education_person, "data_clean/education_person.rds")
 
 ```
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       

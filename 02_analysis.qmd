@@ -21,7 +21,7 @@ editor: visual
 
 # Preparation
 
-## Load packages and analysis datasets
+## Data import
 
 ```{r}
 #| echo: false
@@ -82,7 +82,7 @@ model_fixed_table <- function(model, digits = 3) {
 
 ```
 
-## Verify imported analysis objects
+## Import checks
 
 ```{r}
 #| include: false
@@ -100,7 +100,9 @@ stopifnot("planned_condition" %in% names(analysis_session))
 
 -   `dat_main_final = the same dataset plus order_group`
 
-## Create fixed analysis samples
+## **Main sample**
+
+Create fixed analysis samples
 
 ```{r}
 # ============================================================
@@ -128,11 +130,11 @@ dat_main |>
 
 ```
 
-## Describe analysis samples
+## **Sample overview**
 
 ```{r}
 # ============================================================
-# Stichprobenbeschreibung 2: Analyse Samples (Sessions und Personen)
+# Sample description: Analyse Samples (Sessions und Personen)
 # ============================================================
 
 # Gesamt: alle vorhandenen Sessions mit geplanter Condition
@@ -165,7 +167,7 @@ dat_main |>
 
 ```
 
-# Order and carryover checks
+# Order and carryover
 
 ## Inspect session order structure
 
@@ -177,7 +179,9 @@ Check whether the order of the conditions is relevant:
 
 -   whether order moderates the effect of planned_condition
 
-## Verify crossover structure
+## Crossover check
+
+Verify crossover structure
 
 ```{r}
 dat_main |>
@@ -190,7 +194,7 @@ dat_main |>
 
 ```
 
-## Create order variable
+## Order variable
 
 ```{r}
 order_tbl <- dat_main |>
@@ -215,7 +219,9 @@ order_tbl |> count(order_group)
 
 ```
 
-## Merge order variable into the main sample
+## Merge order
+
+Merge order variable into the main sample
 
 ```{r}
 dat_main_order <- dat_main |>
@@ -256,7 +262,7 @@ dat_main_final <- dat_main_order
 # = From now on, the main models will run using dat_main_final, not dat_main.
 ```
 
-## Descriptive order check
+## Order descriptives
 
 ```{r}
 dat_main_order |>
@@ -271,7 +277,7 @@ dat_main_order |>
 
 ```
 
-## Test order effects statistically
+## Order models
 
 Test three models:\
 A) a baseline model without order;\
@@ -317,7 +323,9 @@ If anova(m_base, m_order_add) is significant –\> then there is a general diffe
 
 # Sample
 
-## Demographic characteristics of the final analysis sample
+## Demographics
+
+Demographic characteristics of the final analysis sample
 
 ```{r}
 # ============================================================
@@ -556,9 +564,9 @@ t.test(hunger_wide$fasted, hunger_wide$satiated, paired = TRUE)
 
 ```
 
-# Moderator-specific samples
+# Moderator samples
 
-## Create moderator-specific datasets
+## Moderator-specific datasets
 
 ```{r}
 # ============================================================
@@ -577,7 +585,9 @@ dat_main_edeq <- dat_main_final |> filter(!is.na(edeq_restraint_c))
 
 ```
 
-## Document sample sizes for moderator analyses
+## Moderator N's
+
+Document sample sizes for moderator analyses
 
 ```{r}
 # ============================================================
@@ -664,7 +674,7 @@ sample_flow_analysis |> flextable()
 
 # Preliminary outcome checks
 
-## Inspect outcome distributions and potential outliers
+## Distributions
 
 ```{r}
 # ============================================================
@@ -712,7 +722,7 @@ dat_main_final |>
 
 ```
 
-## Descriptive statistics by condition
+## Descriptives
 
 ```{r}
 # --------------------------------------------------
@@ -754,7 +764,7 @@ dat_main_final |>
 
 # Model specification
 
-## Evaluate random intercept versus random slope structure
+## Random effects
 
 First, use a random intercept as the main model
 
@@ -798,7 +808,9 @@ use_random_slope <- FALSE
 
 ```
 
-## Define reporting functions for mixed models
+## Model helpers
+
+Define reporting functions for mixed models
 
 ```{r}
 # ============================================================
@@ -852,7 +864,7 @@ model_summary_pack <- function(m0, m1, dat, outcome) {
 
 # Main analyses
 
-## Test condition effects across outcomes
+## Condition effects
 
 ```{r}
 # ============================================================
@@ -911,7 +923,7 @@ results_main[["prop_high_kcal"]] <- list(m0 = m0_prop, m1 = m1_prop)
 
 ```
 
-## Test Session Effects
+## Session Effects
 
 ```{r}
 # ============================================================
@@ -937,7 +949,7 @@ confint(m_period1, method = "Wald")
 
 # Moderation analyses
 
-## Define moderation helper functions
+## Moderation helper functions
 
 ```{r}
 # ============================================================
@@ -1173,7 +1185,7 @@ model_fixed_table(m_sses_int)
 
 ```
 
-## Store moderation models
+## Store models
 
 ```{r}
 # ============================================================
@@ -1194,7 +1206,7 @@ results_mod_total <- list(
 
 ```
 
-## Summarise moderation test results
+## Moderation summary
 
 ```{r}
 # ============================================================
@@ -1218,7 +1230,9 @@ mod_tests_total
 
 ```
 
-## Apply false discovery rate correction
+## FDR correction
+
+Apply false discovery rate correction
 
 ```{r}
 mod_tests_total <- mod_tests_total |>
@@ -1232,7 +1246,7 @@ mod_tests_total |> flextable()
 
 # Sensitivity analyses
 
-## Exclude sessions with planned versus measured mismatch
+## Mismatch check
 
 **What:** Test robustness by excluding sessions with mismatches.
 
@@ -1297,7 +1311,7 @@ print(model_summary_pack(mods_b$m0, mods_b$m1, dat_main_nomismatch, "total_kcal"
 
 ```
 
-## Reanalyse using log transformed total energy intake
+## Log transform
 
 Log transformation typically:
 
@@ -1326,7 +1340,7 @@ pack_log$ci
 
 ```
 
-## Reanalyse excluding extreme values
+## Outlier check
 
 ```{r}
 # ============================================================
@@ -1354,9 +1368,9 @@ print(model_summary_pack(mods_trim$m0, mods_trim$m1, dat_main_no_out, "total_kca
 
 ```
 
-# Visualisation and model diagnostics
+# Plots and diagnostics
 
-## Plot individual trajectories and predicted interactions
+## Plots
 
 ```{r}
 # ============================================================
@@ -1413,7 +1427,7 @@ pred_grid |>
 
 ```
 
-## Inspect model diagnostics for the primary outcome
+## Diagnostics
 
 ```{r}
 # ============================================================
@@ -1443,7 +1457,7 @@ diag_df |>
 
 ```
 
-## Extract report-ready results for the primary model
+## Primary model
 
 ```{r}
 # ============================================================
@@ -1492,26 +1506,4 @@ beta_cond / sd_total
 # 
 # # ============================================================
 # # Export: zentrale Outputs speichern
-# # ============================================================
-# 
-# dir.create("outputs", showWarnings = FALSE)
-# 
-# # Daten
-# saveRDS(analysis_session, "outputs/analysis_session.rds")
-# saveRDS(dat_main, "outputs/dat_main.rds")
-# saveRDS(dat_main_final, "outputs/dat_main_final.rds")
-# write_csv(sample_n, "outputs/sample_n.csv")
-# 
-# # Modelle
-# saveRDS(results_main, "outputs/results_main.rds")
-# saveRDS(results_mod_total, "outputs/results_mod_total.rds")
-# 
-# # Tabellen
-# write_csv(mod_tests_total, "outputs/mod_tests_total.csv")
-# 
-# # Session Info
-# sink("outputs/session_info.txt")
-# sessionInfo()
-# sink()
-
-```
+# # ====
