@@ -128,15 +128,6 @@ stress_t2 <- read_csv(
   mutate(session = "T2")
 ```
 
-**Subjects T1 and T2:** // not sure if you need both, the sliced header here, and the participant list below.
-
-```{r}
-# Quick QC
-food_t1 |> arrange(fastress_id) |> select(fastress_id) |> slice_head(n = 10)
-food_t2 |> arrange(fastress_id) |> select(fastress_id) |> slice_head(n = 10)
-
-```
-
 ## ID cleaning and validity checks
 
 ```{r}
@@ -200,11 +191,13 @@ stress_t2 |> count(fastress_id) |> filter(n > 1)
 
 ```
 
+0 rows = no matching IDs
+
 # Stress manipulation check
 
 ## Stress data
 
-stress_all = T1 and T2 combined; then check: Are there any duplicates per person per session? Do people have 1 or 2 sessions?
+stress_all = T1 and T2 combined -\> then check: Are there any duplicates per person per session? Do people have 1 or 2 sessions?
 
 ```{r}
 # --------------------------------------------------
@@ -225,6 +218,8 @@ stress_all |>
 
 
 ```
+
+=\> no duplicates
 
 ```{r}
 
@@ -307,7 +302,7 @@ stress_person <- stress_indices_per_session |>
   )
 ```
 
-# Food data 
+# Food data
 
 ## Food merge
 
@@ -486,7 +481,7 @@ food_long_pcs |>
   select(fastress_id, session, item, pre, post, consumed_pcs)
 ```
 
-# Blood data 
+# Blood data
 
 In addition to food intake and stress ratings, questionnaire data and blood sampling data were imported to enable manipulation checks and the computation of psychological moderator variables.
 
@@ -572,47 +567,83 @@ Each person × session is assigned a unique condition: -\> fasted -\> satiated. 
 
 ```{r}
 # ============================================================
-# Define metabolic condition per session based on blood markers
+# Define metabolic condition per session
+# Blood markers are checked against the ranges.
+# If both conditions are supported, use the planned condition
+# from Metabolic state (S/F) as tie-break.
 # ============================================================
 
 blood_condition <- blood_all |>
   mutate(
+   planned_condition = case_when(
+  metabolic_state_s_f == "F" ~ "fasted",
+  metabolic_state_s_f == "S" ~ "satiated",
+  TRUE ~ NA_character_
+),
+
     fasting_ketones = (
-      (ketones_pre >= 0.5 & ketones_pre <= 1.5) |
+      (ketones_pre  >= 0.5 & ketones_pre  <= 1.5) |
       (ketones_post >= 0.5 & ketones_post <= 1.5)
     ),
     fasting_glucose = (
-      (glucose_pre >= 3.9 & glucose_pre <= 5.6) |
+      (glucose_pre  >= 3.9 & glucose_pre  <= 5.6) |
       (glucose_post >= 3.9 & glucose_post <= 5.6)
     ),
+
     satiated_ketones = (
-      ketones_pre < 0.6 |
+      ketones_pre  < 0.6 |
       ketones_post < 0.6
     ),
     satiated_glucose = (
-      (glucose_pre >= 6.7 & glucose_pre <= 7.8) |
+      (glucose_pre  >= 6.7 & glucose_pre  <= 7.8) |
       (glucose_post >= 6.7 & glucose_post <= 7.8)
     ),
+
+    blood_supports_fasted   = fasting_ketones | fasting_glucose,
+    blood_supports_satiated = satiated_ketones | satiated_glucose,
+
     condition = case_when(
-      fasting_ketones | fasting_glucose ~ "fasted",
-      satiated_ketones | satiated_glucose ~ "satiated",
+      blood_supports_fasted   & !blood_supports_satiated ~ "fasted",
+      blood_supports_satiated & !blood_supports_fasted   ~ "satiated",
+      blood_supports_fasted   &  blood_supports_satiated ~ planned_condition,
       TRUE ~ NA_character_
+    ),
+
+    condition_source = case_when(
+      blood_supports_fasted   & !blood_supports_satiated ~ "blood_only_fasted",
+      blood_supports_satiated & !blood_supports_fasted   ~ "blood_only_satiated",
+      blood_supports_fasted   &  blood_supports_satiated ~ "overlap_used_planned",
+      TRUE ~ "no_match"
     )
   ) |>
-  select(fastress_id, session, condition)
+  select(
+    fastress_id,
+    session,
+    planned_condition,
+    condition,
+    condition_source
+  )
 ```
 
 **Conditions overall:**
 
 ```{r}
-# Sanity checks
-blood_condition |> count(condition) |> flextable()
+# Quick QC: final condition counts
+blood_condition |>
+  count(condition) |>
+  flextable()
 ```
 
 **Conditions per session:**
 
 ```{r}
-blood_condition |> count(session, condition) |> flextable()
+blood_condition |>
+  count(session, condition) |>
+  flextable()
+
+blood_condition |>
+  count(condition_source, condition) |>
+  flextable()
 
 ```
 
@@ -634,6 +665,10 @@ ggplot(blood_long, aes(x = value, linetype = time)) +
   scale_linetype_manual(values = c(pre = "solid", post = "dashed")) +
   facet_wrap(metabolic_state_s_f ~ marker, scales = "free") +
   labs(x = "Value", y = "Density")
+
+blood_long |>
+  filter(!is.finite(value) | is.na(value))
+# Warning: one missing value -> problems with the chip change. 
 ```
 
 ### Planned condition
@@ -671,7 +706,7 @@ planned_condition |> count(session, planned_condition) |> flextable()
 
 planned_condition: a table containing the randomized condition, i.e., what was specified in the design.
 
-## Condition check 
+## Condition check
 
 Randomisation-Check: Check whether “fasted” and “satiated” occur roughly the same number of times in T1 and T2.
 
@@ -694,7 +729,7 @@ planned_condition |>
 
 ```
 
-## Blood markers 
+## Blood markers
 
 ```{r}
 # ============================================================
@@ -869,7 +904,7 @@ blood_all |>
 
 ```
 
-# Survey data 
+# Survey data
 
 ## Survey import
 
@@ -920,7 +955,7 @@ survey_t1 |> distinct(fastress_id) |> slice_head(n = 10)
 
 ```
 
-## Survey duplicate 
+## Survey duplicate
 
 ```{r}
 
@@ -1823,7 +1858,7 @@ analysis_session |>
 
 ```
 
-### Merge QC 
+### Merge QC
 
 -   n_rows and n_pairs should be equal
 
