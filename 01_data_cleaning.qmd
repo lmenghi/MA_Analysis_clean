@@ -914,60 +914,93 @@ blood_all |>
 # Import questionnaire data (T1/T2) and create FASTRESS ID from numeric SUB
 # --------------------------------------------------
 
-survey_t1 <- read_csv("data_raw/FASTRESS_survey_T1_initial.csv",
+survey_t1 <- read_csv(
+  "data_raw/FASTRESS_survey_T1_initial.csv",
   show_col_types = FALSE
 ) |>
   clean_names() |>
-mutate(
-  session = "T1",
-  sub = as.character(sub),
-  sub = str_trim(sub),
-  sub = str_pad(sub, width = 3, side = "left", pad = "0"),
-  fastress_id = str_to_lower(paste0("sub-", sub))
-) |> filter(!is.na(sub), sub != "")
+  mutate(
+    session = "T1",
+    sub = as.character(sub),
+    sub = str_trim(sub),
+    sub = str_pad(sub, width = 3, side = "left", pad = "0"),
+    fastress_id = str_to_lower(paste0("sub-", sub))
+  ) |>
+  filter(!is.na(sub), sub != "") |>
+  filter(!fastress_id %in% c("sub-021", "sub-036")) |>
+  arrange(submitdate) |>
+  group_by(fastress_id, session) |>
+  slice(1) |>
+  ungroup()
 
+# Exclude survey-only cases not belonging to the final study sample:
+# sub-021 = no show
+# sub-036 = excluded because of piercing
 
 survey_t2 <- read_csv(
   "data_raw/FASTRESS_survey_T2_initial.csv",
   show_col_types = FALSE
 ) |>
   clean_names() |>
-mutate(
-  session = "T2",
-  sub = as.character(sub),
-  sub = str_trim(sub),
-  sub = str_pad(sub, width = 3, side = "left", pad = "0"),
-  fastress_id = str_to_lower(paste0("sub-", sub))
-) |> filter(!is.na(sub), sub != "")
-
+  mutate(
+    session = "T2",
+    sub = as.character(sub),
+    sub = str_trim(sub),
+    sub = str_pad(sub, width = 3, side = "left", pad = "0"),
+    fastress_id = str_to_lower(paste0("sub-", sub))
+  ) |>
+  filter(!is.na(sub), sub != "") |>
+  filter(!(fastress_id == "sub-004" & as.Date(submitdate) == as.Date("2026-03-09"))) |>
+  arrange(submitdate) |>
+  group_by(fastress_id, session) |>
+  slice(1) |>
+  ungroup()
 
 # Quick QC
-survey_t1 |> summarise(n_rows = n(), n_unique_id = n_distinct(fastress_id))
-survey_t2 |> summarise(n_rows = n(), n_unique_id = n_distinct(fastress_id))
+survey_t1 |>
+  summarise(n_rows = n(), n_unique_id = n_distinct(fastress_id))
 
-#Survey T1: 20 Zeilen, aber nur 19 eindeutige IDs → eine ID kommt doppelt vor
-#Survey T2: 6 Zeilen, 6 IDs → ok
+survey_t2 |>
+  summarise(n_rows = n(), n_unique_id = n_distinct(fastress_id))
 
-survey_t1 |> count(fastress_id) |> filter(n > 1)
-survey_t2 |> count(fastress_id) |> filter(n > 1)
+survey_t1 |>
+  count(fastress_id) |>
+  filter(n > 1)
 
-survey_t1 |> distinct(fastress_id) |> slice_head(n = 10)
+survey_t2 |>
+  count(fastress_id) |>
+  filter(n > 1)
+
+# Check sub-004 after manual correction
+survey_t2 |>
+  filter(fastress_id == "sub-004") |>
+  select(fastress_id, id, submitdate, startdate, datestamp)
 
 ```
 
-## Survey duplicate
+sub-002 appears twice -\> both are T1 -\> keep the first one filled out // you did verify this, right? Yes
+
+Keep exactly one row per person and session -\> the first one filled out. The second (incorrectly filled out T1) is discarded.
+
+The rule is now: If a questionnaire was filled out multiple times within the same session, the first version filled out was retained.
+
+sub-004 filled out survey T2 twice -\> we keep the one from 10.03. as this was her second session.
 
 ```{r}
-
+ 
 # --------------------------------------------------
-# Identify duplicate participant in survey T1
+# Identify remaining duplicate participants in survey data
 # --------------------------------------------------
 
 survey_t1 |>
   count(fastress_id) |>
   filter(n > 1)
 
-# Show the full rows for the duplicated ID(s)
+survey_t2 |>
+  count(fastress_id) |>
+  filter(n > 1)
+
+# Show full rows for duplicated ID(s), if any
 dup_ids_t1 <- survey_t1 |>
   count(fastress_id) |>
   filter(n > 1) |>
@@ -978,34 +1011,15 @@ survey_t1 |>
   select(fastress_id, id, submitdate, startdate, datestamp) |>
   arrange(fastress_id, submitdate)
 
-```
+dup_ids_t2 <- survey_t2 |>
+  count(fastress_id) |>
+  filter(n > 1) |>
+  pull(fastress_id)
 
-sub-002 appears twice -\> both are T1 -\> keep the first one filled out // you did verify this, right? Yes
-
-Keep exactly one row per person and session -\> the first one filled out. The second (incorrectly filled out T1) is discarded.
-
-The rule is now: If a questionnaire was filled out multiple times within the same session, the first version filled out was retained.
-
-```{r}
- 
-# --------------------------------------------------
-# Deduplicate survey T1: keep FIRST submission per participant
-# --------------------------------------------------
-
-survey_t1 <- survey_t1 |>
-  mutate(
-    submitdate = as.POSIXct(submitdate, tz = "Europe/Zurich")
-  ) |>
-  arrange(fastress_id, submitdate) |>   # früheste zuerst
-  distinct(fastress_id, .keep_all = TRUE)
-
-# Re-check
-survey_t1 |> summarise(
-  n_rows = n(),
-  n_unique_id = n_distinct(fastress_id)
-)
-
-survey_t1 |> count(fastress_id) |> filter(n > 1)
+survey_t2 |>
+  filter(fastress_id %in% dup_ids_t2) |>
+  select(fastress_id, id, submitdate, startdate, datestamp) |>
+  arrange(fastress_id, submitdate)
 
 ```
 
@@ -1495,12 +1509,28 @@ count combination:
 ids_overview |> count(in_food, in_blood, in_survey)
 ```
 
-Meaning: How many people are included in each combination?Examples:\
+Meaning: How many people are included in each combination?
+
+Examples:\
 TRUE TRUE TRUE = People with all three data sets\
 TRUE TRUE FALSE = People with Food + Blood, but without Survey\
 TRUE FALSE TRUE = Food + Survey, but no Blood
 
-==\> Important for the results section
+```{r}
+# --------------------------------------------------
+# QC: Identify survey-only participants
+# --------------------------------------------------
+
+ids_food   <- food_all |> distinct(fastress_id)
+ids_blood  <- blood_all |> distinct(fastress_id)
+ids_survey <- survey_all |> distinct(fastress_id)
+
+survey_only <- ids_survey |>
+  anti_join(ids_food, by = "fastress_id") |>
+  anti_join(ids_blood, by = "fastress_id")
+
+survey_only
+```
 
 ## Sample Descriptives
 
