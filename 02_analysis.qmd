@@ -341,7 +341,7 @@ demo_analysis <- dat_main_final |>
   ) |>
   left_join(
     education_person |>
-      select(fastress_id, education),
+      select(fastress_id, education_label),
     by = "fastress_id"
   )
 
@@ -419,10 +419,10 @@ check_paired_t <- function(x, y, label = "difference") {
 
 ```{r}
 # ============================================================
-# Manipulationcheck Stress: baseline, mild, strong (Session-Level)
+# Manipulation check stress: baseline, mild, strong (session level)
 # ============================================================
 
-# Nur vollständige Sessions mit allen drei Stresswerten
+# Keep all sessions with complete stress values
 stress_check_session <- stress_indices_per_session |>
   filter(
     !is.na(baseline_mean),
@@ -430,17 +430,28 @@ stress_check_session <- stress_indices_per_session |>
     !is.na(strong_mean)
   )
 
-# QC
+# QC: how many usable observations are available?
 stress_check_session |>
   summarise(
-    n_sessions = n(),
-    n_ids = n_distinct(fastress_id)
+    n_obs = n(),
+    n_ids = n_distinct(fastress_id),
+    n_session_labels = n_distinct(session)
   )
 
-# Deskriptive Werte
+# QC: distribution across T1 / T2
+stress_check_session |>
+  count(session)
+
+# QC: how many complete stress sessions per person?
+stress_check_session |>
+  group_by(fastress_id) |>
+  summarise(n_complete_sessions = n(), .groups = "drop") |>
+  count(n_complete_sessions)
+
+# Descriptive statistics
 stress_check_session |>
   summarise(
-    n_sessions = n(),
+    n_obs = n(),
     n_ids = n_distinct(fastress_id),
     baseline_M = mean(baseline_mean, na.rm = TRUE),
     baseline_SD = sd(baseline_mean, na.rm = TRUE),
@@ -450,12 +461,26 @@ stress_check_session |>
     strong_SD = sd(strong_mean, na.rm = TRUE)
   )
 
-# Voraussetzungen prüfen: Differenzwerte
-check_paired_t(stress_check_session$mild_mean, stress_check_session$baseline_mean, "Stress mild - baseline")
-check_paired_t(stress_check_session$strong_mean, stress_check_session$baseline_mean, "Stress strong - baseline")
-check_paired_t(stress_check_session$strong_mean, stress_check_session$mild_mean, "Stress strong - mild")
+# Assumption checks for paired t-tests
+check_paired_t(
+  stress_check_session$mild_mean,
+  stress_check_session$baseline_mean,
+  "Stress mild - baseline"
+)
 
-# Gepaarte t-Tests
+check_paired_t(
+  stress_check_session$strong_mean,
+  stress_check_session$baseline_mean,
+  "Stress strong - baseline"
+)
+
+check_paired_t(
+  stress_check_session$strong_mean,
+  stress_check_session$mild_mean,
+  "Stress strong - mild"
+)
+
+# Paired t-tests
 t.test(
   stress_check_session$mild_mean,
   stress_check_session$baseline_mean,
@@ -474,6 +499,27 @@ t.test(
   paired = TRUE
 )
 
+# Wilcoxon signed-rank tests as robustness checks
+wilcox.test(
+  stress_check_session$mild_mean,
+  stress_check_session$baseline_mean,
+  paired = TRUE,
+  exact = FALSE
+)
+
+wilcox.test(
+  stress_check_session$strong_mean,
+  stress_check_session$baseline_mean,
+  paired = TRUE,
+  exact = FALSE
+)
+
+wilcox.test(
+  stress_check_session$strong_mean,
+  stress_check_session$mild_mean,
+  paired = TRUE,
+  exact = FALSE
+)
 ```
 
 ## Blood markers
@@ -1020,8 +1066,6 @@ model_fixed_table(m_srs_int)
 ```
 
 ### Moderation 2: CERQ
-
-Hinweis: CERQ auf 10 setzen
 
 ```{r}
 # ------------------------------------------------------------

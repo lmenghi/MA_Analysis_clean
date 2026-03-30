@@ -221,59 +221,49 @@ stress_all |>
 
 =\> no duplicates
 
+## Stress indices
+
 ```{r}
 
-# Keep participants with data in BOTH sessions (stable paired sample)
-stress_ids_complete <- stress_all |>
-  distinct(fastress_id, session) |>
-  count(fastress_id, name = "n_sessions") |>
-  filter(n_sessions == 2) |>
-  pull(fastress_id)
-
-stress_all_complete <- stress_all |>
-  filter(fastress_id %in% stress_ids_complete)
+# --------------------------------------------------
+# Stress data: prepare ALL available session-level data
+# --------------------------------------------------
 
 # Identify mild and strong stress rating columns (robust pattern, case insensitive)
-
-mild_cols <- names(stress_all_complete) |>
+mild_cols <- names(stress_all) |>
   stringr::str_subset("(?i)mild")
 
-strong_cols <- names(stress_all_complete) |>
+strong_cols <- names(stress_all) |>
   stringr::str_subset("(?i)strong")
-
-stress_all_complete <- stress_all_complete |>
-  mutate(
-    stress_baseline_general = parse_num(stress_baseline_general),
-    across(all_of(c(mild_cols, strong_cols)), parse_num)
-  )
 
 # Safety checks: make sure columns were found
 stopifnot(length(mild_cols) > 0)
 stopifnot(length(strong_cols) > 0)
 
-```
-
-## Stress indices
-
-```{r}
+# Parse numeric values on ALL available sessions
+stress_all_clean <- stress_all |>
+  mutate(
+    stress_baseline_general = parse_num(stress_baseline_general),
+    across(all_of(c(mild_cols, strong_cols)), parse_num)
+  )
 
 # Compute indices per person x session
-X_mild <- stress_all_complete |>
+X_mild <- stress_all_clean |>
   select(all_of(mild_cols)) |>
   mutate(across(everything(), as.numeric)) |>
   as.matrix()
 
-X_strong <- stress_all_complete |>
+X_strong <- stress_all_clean |>
   select(all_of(strong_cols)) |>
   mutate(across(everything(), as.numeric)) |>
   as.matrix()
 
-stress_indices_per_session <- stress_all_complete |>
+stress_indices_per_session <- stress_all_clean |>
   transmute(
     fastress_id,
     session,
     baseline_mean = stress_baseline_general,
-    mild_mean   = rowMeans(X_mild, na.rm = TRUE),
+    mild_mean = rowMeans(X_mild, na.rm = TRUE),
     strong_mean = rowMeans(X_strong, na.rm = TRUE),
     delta_mild_baseline = mild_mean - baseline_mean,
     delta_strong_baseline = strong_mean - baseline_mean,
