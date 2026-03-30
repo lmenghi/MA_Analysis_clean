@@ -419,10 +419,9 @@ check_paired_t <- function(x, y, label = "difference") {
 
 ```{r}
 # ============================================================
-# Manipulation check stress: baseline, mild, strong (session level)
+# Manipulation check stress: session level, all available data
 # ============================================================
 
-# Keep all sessions with complete stress values
 stress_check_session <- stress_indices_per_session |>
   filter(
     !is.na(baseline_mean),
@@ -430,7 +429,7 @@ stress_check_session <- stress_indices_per_session |>
     !is.na(strong_mean)
   )
 
-# QC: how many usable observations are available?
+# QC
 stress_check_session |>
   summarise(
     n_obs = n(),
@@ -438,15 +437,8 @@ stress_check_session |>
     n_session_labels = n_distinct(session)
   )
 
-# QC: distribution across T1 / T2
 stress_check_session |>
   count(session)
-
-# QC: how many complete stress sessions per person?
-stress_check_session |>
-  group_by(fastress_id) |>
-  summarise(n_complete_sessions = n(), .groups = "drop") |>
-  count(n_complete_sessions)
 
 # Descriptive statistics
 stress_check_session |>
@@ -458,10 +450,18 @@ stress_check_session |>
     mild_M = mean(mild_mean, na.rm = TRUE),
     mild_SD = sd(mild_mean, na.rm = TRUE),
     strong_M = mean(strong_mean, na.rm = TRUE),
-    strong_SD = sd(strong_mean, na.rm = TRUE)
+    strong_SD = sd(strong_mean, na.rm = TRUE),
+    dMB_M = mean(delta_mild_baseline, na.rm = TRUE),
+    dMB_SD = sd(delta_mild_baseline, na.rm = TRUE),
+    dSB_M = mean(delta_strong_baseline, na.rm = TRUE),
+    dSB_SD = sd(delta_strong_baseline, na.rm = TRUE),
+    dSM_M = mean(delta_strong_mild, na.rm = TRUE),
+    dSM_SD = sd(delta_strong_mild, na.rm = TRUE),
+    peak_M = mean(peak_stress, na.rm = TRUE),
+    peak_SD = sd(peak_stress, na.rm = TRUE)
   )
 
-# Assumption checks for paired t-tests
+# Assumption checks
 check_paired_t(
   stress_check_session$mild_mean,
   stress_check_session$baseline_mean,

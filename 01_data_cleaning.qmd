@@ -206,14 +206,40 @@ stress_all = T1 and T2 combined -\> then check: Are there any duplicates per per
 
 stress_all <- bind_rows(stress_t1, stress_t2)
 
-# Quick QC: rows and unique IDs
+# Quick QC: rows and IDs by session
+stress_all |>
+  count(session) |>
+  flextable()
+
 stress_all |>
   group_by(session) |>
   summarise(
     n_rows = n(),
     n_unique_id = n_distinct(fastress_id),
-    n_sessions = n_distinct(session)
-  ) |> 
+    .groups = "drop"
+  ) |>
+  flextable()
+
+# QC: total overview
+stress_all |>
+  summarise(
+    n_rows = n(),
+    n_ids = n_distinct(fastress_id),
+    n_session_labels = n_distinct(session)
+  ) |>
+  flextable()
+
+# QC: how many sessions per person exist in raw stress data?
+stress_all |>
+  distinct(fastress_id, session) |>
+  count(fastress_id, name = "n_sessions") |>
+  count(n_sessions) |>
+  flextable()
+
+# QC: duplicate person x session rows must be empty
+stress_all |>
+  count(fastress_id, session) |>
+  filter(n > 1) |>
   flextable()
 
 
@@ -229,25 +255,37 @@ stress_all |>
 # Stress data: prepare ALL available session-level data
 # --------------------------------------------------
 
-# Identify mild and strong stress rating columns (robust pattern, case insensitive)
+# Identify baseline, mild, and strong stress rating columns
+baseline_cols <- names(stress_all) |>
+  stringr::str_subset("(?i)general|baseline")
+
 mild_cols <- names(stress_all) |>
   stringr::str_subset("(?i)mild")
 
 strong_cols <- names(stress_all) |>
   stringr::str_subset("(?i)strong")
 
-# Safety checks: make sure columns were found
+baseline_cols
+mild_cols
+strong_cols
+
+# Safety checks
+stopifnot(length(baseline_cols) > 0)
 stopifnot(length(mild_cols) > 0)
 stopifnot(length(strong_cols) > 0)
 
 # Parse numeric values on ALL available sessions
 stress_all_clean <- stress_all |>
   mutate(
-    stress_baseline_general = parse_num(stress_baseline_general),
-    across(all_of(c(mild_cols, strong_cols)), parse_num)
+    across(all_of(c(baseline_cols, mild_cols, strong_cols)), parse_num)
   )
 
-# Compute indices per person x session
+# Compute matrices
+X_baseline <- stress_all_clean |>
+  select(all_of(baseline_cols)) |>
+  mutate(across(everything(), as.numeric)) |>
+  as.matrix()
+
 X_mild <- stress_all_clean |>
   select(all_of(mild_cols)) |>
   mutate(across(everything(), as.numeric)) |>
@@ -258,17 +296,40 @@ X_strong <- stress_all_clean |>
   mutate(across(everything(), as.numeric)) |>
   as.matrix()
 
+# Compute indices per person x session
 stress_indices_per_session <- stress_all_clean |>
   transmute(
     fastress_id,
     session,
-    baseline_mean = stress_baseline_general,
+    baseline_mean = rowMeans(X_baseline, na.rm = TRUE),
     mild_mean = rowMeans(X_mild, na.rm = TRUE),
     strong_mean = rowMeans(X_strong, na.rm = TRUE),
     delta_mild_baseline = mild_mean - baseline_mean,
     delta_strong_baseline = strong_mean - baseline_mean,
-    delta_strong_mild = strong_mean - mild_mean
+    delta_strong_mild = strong_mean - mild_mean,
+    peak_stress = pmax(baseline_mean, mild_mean, strong_mean, na.rm = TRUE)
   )
+
+# QC
+stress_indices_per_session |>
+  summarise(
+    n_rows = n(),
+    n_ids = n_distinct(fastress_id),
+    n_session_labels = n_distinct(session),
+    n_missing_baseline = sum(is.na(baseline_mean)),
+    n_missing_mild = sum(is.na(mild_mean)),
+    n_missing_strong = sum(is.na(strong_mean))
+  ) |>
+  flextable()
+
+stress_indices_per_session |>
+  count(session) |>
+  flextable()
+
+stress_indices_per_session |>
+  filter(!is.na(baseline_mean), !is.na(mild_mean), !is.na(strong_mean)) |>
+  count(session) |>
+  flextable()
 
 ```
 
