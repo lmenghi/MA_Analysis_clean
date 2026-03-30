@@ -126,7 +126,7 @@ dat_main |>
     n_conditions = n_distinct(planned_condition),
     .groups = "drop"
   ) |>
-  count(n_rows, n_sessions, n_conditions)
+  count(n_rows, n_sessions, n_conditions) |> flextable()
 
 ```
 
@@ -142,19 +142,19 @@ analysis_session |>
   summarise(
     n_total_sessions = sum(!is.na(planned_condition)),
     n_total_persons  = n_distinct(fastress_id[!is.na(planned_condition)])
-  )
+  )|> flextable()
 
 # Designkonformes Hauptsample: complete cases (2 Sessions pro Person) + Outcome vorhanden
 dat_main |>
   summarise(
     n_sessions = n(),
     n_persons  = n_distinct(fastress_id)
-  )
+  )|> flextable()
 
 # Zusatz: wie viele complete cases wurden identifiziert (Personenebene)
 tibble(
   n_complete_persons = length(ids_complete)
-)
+)|> flextable()
 
 # Tabelle für Ergebnisteil
 dat_main |>
@@ -163,7 +163,7 @@ dat_main |>
     n_sessions = n(),
     n_persons = n_distinct(fastress_id),
     .groups = "drop"
-  )
+  )|> flextable()
 
 ```
 
@@ -181,18 +181,18 @@ Check whether the order of the conditions is relevant:
 
 ## Crossover check
 
-Verify crossover structure
-
 ```{r}
 dat_main |>
   distinct(fastress_id, session, planned_condition) |>
   count(fastress_id) |>
-  count(n)
+  count(n) |> flextable()
 
 dat_main |>
-  count(session, planned_condition)
+  count(session, planned_condition)|> flextable()
 
 ```
+
+=\> balanced -\> 10 fasted, 10 satiated per session
 
 ## Order variable
 
@@ -215,7 +215,7 @@ order_tbl <- dat_main |>
   )
 
 
-order_tbl |> count(order_group)
+order_tbl |> count(order_group)|> flextable()
 
 ```
 
@@ -238,7 +238,7 @@ dat_main_order |>
     n_conditions = n_distinct(planned_condition),
     .groups = "drop"
   ) |>
-  count(n_sessions, n_conditions)
+  count(n_sessions, n_conditions)|> flextable()
 
 # Erwartung: 
 # n_sessions = 2 -> Jede Person hat zwei Sessions
@@ -249,9 +249,9 @@ dat_main_order |>
     n_rows = n(),
     n_ids = n_distinct(fastress_id),
     n_missing_order = sum(is.na(order_group))
-  )
+  )|> flextable()
 
-dat_main_order |> count(order_group, session, planned_condition)
+dat_main_order |> count(order_group, session, planned_condition)|> flextable()
 
 # ============================================================
 # Finaler Hauptdatensatz für Hauptanalysen
@@ -261,6 +261,12 @@ dat_main_final <- dat_main_order
 
 # = From now on, the main models will run using dat_main_final, not dat_main.
 ```
+
+-   `satiated_first`: T1 = satiated, T2 = fasted
+
+-   `fasted_first`: T1 = fasted, T2 = satiated
+
+=\> merge correctly
 
 ## Order descriptives
 
@@ -273,7 +279,8 @@ dat_main_order |>
     total_kcal_M = mean(total_kcal, na.rm = TRUE),
     total_kcal_SD = sd(total_kcal, na.rm = TRUE),
     .groups = "drop"
-  )
+  )|>
+  flextable()
 
 ```
 
@@ -317,9 +324,9 @@ model_fixed_table(m_order_int)
 
 **Interpretation**
 
-If anova(m_order_add, m_order_int) is not significant –\> then there is no evidence that order moderates the condition effect
+p = .1644 anova(m_base, m_order_add) is not significant –\> no statistical evidence that the order has an additional main effect on total_kcal.
 
-If anova(m_base, m_order_add) is significant –\> then there is a general difference between fasted_first and satiated_first, independent of condition
+p = .1302 anova(m_order_add, m_order_int) is not significant –\> no evidence that order moderates the condition effect
 
 # Sample
 
@@ -427,7 +434,7 @@ stress_check_session <- stress_indices_per_session |>
     !is.na(baseline_mean),
     !is.na(mild_mean),
     !is.na(strong_mean)
-  )
+  ) |> flextable()
 
 # QC
 stress_check_session |>
@@ -438,7 +445,8 @@ stress_check_session |>
   )
 
 stress_check_session |>
-  count(session)
+  count(session)|>
+  flextable()
 
 # Descriptive statistics
 stress_check_session |>
@@ -459,7 +467,8 @@ stress_check_session |>
     dSM_SD = sd(delta_strong_mild, na.rm = TRUE),
     peak_M = mean(peak_stress, na.rm = TRUE),
     peak_SD = sd(peak_stress, na.rm = TRUE)
-  )
+  )|>
+  flextable()
 
 # Assumption checks
 check_paired_t(
@@ -522,6 +531,10 @@ wilcox.test(
 )
 ```
 
+According to the Shapiro–Wilk test, the difference values for "mild" vs. "baseline" and "strong" vs. "baseline" did not differ significantly from a normal distribution (p = .124 and p = .082).
+
+For "strong" vs. "mild" the distribution was not met (p = .0167 -\> significant). -\> The corresponding Wilcoxon test was also highly significant.
+
 ## Blood markers
 
 ```{r}
@@ -544,7 +557,8 @@ blood_wide |>
     n_persons = n(),
     n_ketones_paired = sum(!is.na(ketones_pre_fasted) & !is.na(ketones_pre_satiated)),
     n_glucose_paired = sum(!is.na(glucose_pre_fasted) & !is.na(glucose_pre_satiated))
-  )
+  )|>
+  flextable()
 
 # Werte robust zu numerisch konvertieren
 blood_wide <- blood_wide |>
@@ -562,6 +576,8 @@ t.test(blood_wide$ketones_pre_fasted, blood_wide$ketones_pre_satiated, paired = 
 t.test(blood_wide$glucose_pre_fasted, blood_wide$glucose_pre_satiated, paired = TRUE)
 
 ```
+
+The metabolic state was more clearly evident in the blood for glucose than for ketones. Although ketone levels were in line with expectations, the evidence is not sufficient in this case. Glucose levels, on the other hand, differed significantly between the conditions.
 
 ## Hunger ratings
 
@@ -590,7 +606,8 @@ hunger_wide |>
   summarise(
     n_persons = n(),
     n_hunger_paired = sum(!is.na(fasted) & !is.na(satiated))
-  )
+  )|>
+  flextable()
 
 # Deskriptive Werte
 hunger_wide |>
@@ -599,7 +616,8 @@ hunger_wide |>
     fasted_SD = sd(fasted, na.rm = TRUE),
     satiated_M = mean(satiated, na.rm = TRUE),
     satiated_SD = sd(satiated, na.rm = TRUE)
-  )
+  )|>
+  flextable()
 
 # Voraussetzungen prüfen
 check_paired_t(hunger_wide$fasted, hunger_wide$satiated, "Hunger fasted - satiated")
@@ -607,8 +625,18 @@ check_paired_t(hunger_wide$fasted, hunger_wide$satiated, "Hunger fasted - satiat
 # Paired t test
 t.test(hunger_wide$fasted, hunger_wide$satiated, paired = TRUE)
 
+# Wilcoxon signed-rank test
+wilcox.test(
+  hunger_wide$fasted,
+  hunger_wide$satiated,
+  paired = TRUE,
+  exact = FALSE
+)
+
 
 ```
+
+Shapiro–Wilk p = **.0263**. -\> distribution was not met -\> Wilcoxon: V = 167, p \< .001
 
 # Moderator samples
 
@@ -673,6 +701,8 @@ sample_n <- tibble(
 sample_n |> flextable()
 ```
 
+= All moderator-specific analysis datasets are the same size =\> 40 rows and 20 IDs
+
 ## Sample flow overview
 
 ```{r}
@@ -732,7 +762,8 @@ outcomes <- c("total_kcal", "high_kcal", "low_kcal", "prop_high_kcal")
 
 # 8.1 Anteil Nullen pro Outcome (nur Sessions mit Condition)
 dat_main_final |>
-  summarise(across(all_of(outcomes), ~mean(.x == 0, na.rm = TRUE), .names = "p_zero_{.col}"))
+  summarise(across(all_of(outcomes), ~mean(.x == 0, na.rm = TRUE), .names = "p_zero_{.col}"))|>
+  flextable()
 
 # 8.2 Deskriptive Verteilung (Min, Median, Max, Quantile)
 dat_main_final |>
@@ -746,13 +777,15 @@ dat_main_final |>
                      p95 = ~quantile(.x, 0.95, na.rm = TRUE),
                      max = ~max(.x, na.rm = TRUE)
                    ),
-                   .names = "{.col}_{.fn}"))
+                   .names = "{.col}_{.fn}"))|>
+  flextable()
 
 # 8.3 Top Ausreisser Sessions anschauen (nach total_kcal)
 dat_main_final |>
   arrange(desc(total_kcal)) |>
   select(fastress_id, session, planned_condition, total_kcal, high_kcal, low_kcal, prop_high_kcal) |>
-  slice_head(n = 10)
+  slice_head(n = 10)|>
+  flextable()
 
 # 8.4 Quick Plots (optional, aber hilfreich)
 dat_main_final |>
@@ -821,6 +854,8 @@ Then test the random slope
 -   no major warnings appear
 
 -   and the fit is visibly better
+
+=\> A random-intercept model was retained as the primary specification, as adding a random slope for planned_condition was not considered sufficiently justified given the small sample and two observations per subject.
 
 ```{r}
 
@@ -925,9 +960,11 @@ results_main <- list()
 m0_total <- lmer(total_kcal ~ order_group + (1 | subject), data = dat_main_final, REML = FALSE)
 m1_total <- lmer(total_kcal ~ planned_condition + order_group + (1 | subject), data = dat_main_final, REML = FALSE)
 
-anova(m0_total, m1_total)
+anova(m0_total, m1_total) |> 
+  as.data.frame() |> 
+  flextable()
 
-results_main[["total_kcal"]] <- list(m0 = m0_total, m1 = m1_total)
+results_main[["total_kcal"]] <- list(m0 = m0_total, m1 = m1_total) 
 
 # ------------------------------------------------------------
 # Outcome: high_kcal
@@ -935,9 +972,10 @@ results_main[["total_kcal"]] <- list(m0 = m0_total, m1 = m1_total)
 m0_high <- lmer(high_kcal ~ order_group + (1 | subject), data = dat_main_final, REML = FALSE)
 m1_high <- lmer(high_kcal ~ planned_condition + order_group + (1 | subject), data = dat_main_final, REML = FALSE)
 
-anova(m0_high, m1_high)
-summary(m1_high)
-confint(m1_high, method = "Wald")
+anova(m0_high, m1_high) |> as.data.frame() |> 
+  flextable()
+#summary(m1_high)
+#confint(m1_high, method = "Wald")
 
 results_main[["high_kcal"]] <- list(m0 = m0_high, m1 = m1_high)
 
@@ -947,9 +985,10 @@ results_main[["high_kcal"]] <- list(m0 = m0_high, m1 = m1_high)
 m0_low <- lmer(low_kcal ~ order_group + (1 | subject), data = dat_main_final, REML = FALSE)
 m1_low <- lmer(low_kcal ~ planned_condition + order_group + (1 | subject), data = dat_main_final, REML = FALSE)
 
-anova(m0_low, m1_low)
-summary(m1_low)
-confint(m1_low, method = "Wald")
+anova(m0_low, m1_low) |> as.data.frame() |> 
+  flextable()
+#summary(m1_low)
+#confint(m1_low, method = "Wald")
 
 results_main[["low_kcal"]] <- list(m0 = m0_low, m1 = m1_low)
 
@@ -960,12 +999,12 @@ m0_prop <- lmer(prop_high_kcal ~ order_group + (1 | subject), data = dat_main_fi
 m1_prop <- lmer(prop_high_kcal ~ planned_condition + order_group + (1 | subject), data = dat_main_final, REML = FALSE)
 
 
-anova(m0_prop, m1_prop)
-summary(m1_prop)
-confint(m1_prop, method = "Wald")
+anova(m0_prop, m1_prop) |> as.data.frame() |> 
+  flextable()
+#summary(m1_prop)
+#confint(m1_prop, method = "Wald")
 
 results_main[["prop_high_kcal"]] <- list(m0 = m0_prop, m1 = m1_prop)
-
 
 ```
 
