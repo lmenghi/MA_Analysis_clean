@@ -434,7 +434,7 @@ stress_check_session <- stress_indices_per_session |>
     !is.na(baseline_mean),
     !is.na(mild_mean),
     !is.na(strong_mean)
-  ) |> flextable()
+  )
 
 # QC
 stress_check_session |>
@@ -868,13 +868,13 @@ Then test the random slope
 # Vor der finalen Hauptanalyse aktivieren
 
 # m_ri <- lmer(
-#   total_kcal ~ planned_condition + order_group + (1 | subject),
+#   total_kcal ~ planned_condition + (1 | subject),
 #   data = dat_main_final,
 #   REML = FALSE
 # )
 
 # m_rs <- lmer(
-#   total_kcal ~ planned_condition + order_group + (1 + planned_condition || subject),
+#   total_kcal ~ planned_condition + (1 + planned_condition || subject),
 #   data = dat_main_final,
 #   REML = FALSE
 # )
@@ -902,16 +902,16 @@ fit_main_effect <- function(dat, outcome, use_random_slope = FALSE) {
 
   if (use_random_slope) {
     f_m1 <- as.formula(
-      paste0(outcome, " ~ planned_condition + order_group + (1 + planned_condition || subject)")
+      paste0(outcome, " ~ planned_condition + (1 + planned_condition || subject)")
     )
   } else {
     f_m1 <- as.formula(
-      paste0(outcome, " ~ planned_condition + order_group + (1 | subject)")
+      paste0(outcome, " ~ planned_condition + (1 | subject)")
     )
   }
 
   f_m0 <- as.formula(
-    paste0(outcome, " ~ order_group + (1 | subject)")
+    paste0(outcome, " ~ 1 + (1 | subject)")
   )
 
   m1 <- lmer(f_m1, data = dat, REML = FALSE)
@@ -919,6 +919,7 @@ fit_main_effect <- function(dat, outcome, use_random_slope = FALSE) {
 
   list(m0 = m0, m1 = m1)
 }
+
 model_summary_pack <- function(m0, m1, dat, outcome) {
 
   comp <- anova(m0, m1)
@@ -948,88 +949,228 @@ model_summary_pack <- function(m0, m1, dat, outcome) {
 ## Condition effects
 
 ```{r}
+# # ============================================================
+# # Hauptanalyse: Condition Effekt für alle Outcomes
+# # ============================================================
+# 
+# results_main <- list()
+# 
+# # ------------------------------------------------------------
+# # Outcome: total_kcal => RQ1, H1
+# # ------------------------------------------------------------
+# m0_total <- lmer(total_kcal ~ order_group + (1 | subject), data = dat_main_final, REML = FALSE)
+# m1_total <- lmer(total_kcal ~ planned_condition + order_group + (1 | subject), data = dat_main_final, REML = FALSE)
+# 
+# anova(m0_total, m1_total) |> 
+#   as.data.frame() |> 
+#   flextable()
+# 
+# results_main[["total_kcal"]] <- list(m0 = m0_total, m1 = m1_total) 
+# 
+# # ------------------------------------------------------------
+# # Outcome: high_kcal
+# # ------------------------------------------------------------
+# m0_high <- lmer(high_kcal ~ order_group + (1 | subject), data = dat_main_final, REML = FALSE)
+# m1_high <- lmer(high_kcal ~ planned_condition + order_group + (1 | subject), data = dat_main_final, REML = FALSE)
+# 
+# anova(m0_high, m1_high) |> as.data.frame() |> 
+#   flextable()
+# #summary(m1_high)
+# #confint(m1_high, method = "Wald")
+# 
+# results_main[["high_kcal"]] <- list(m0 = m0_high, m1 = m1_high)
+# 
+# # ------------------------------------------------------------
+# # Outcome: low_kcal
+# # ------------------------------------------------------------
+# m0_low <- lmer(low_kcal ~ order_group + (1 | subject), data = dat_main_final, REML = FALSE)
+# m1_low <- lmer(low_kcal ~ planned_condition + order_group + (1 | subject), data = dat_main_final, REML = FALSE)
+# 
+# anova(m0_low, m1_low) |> as.data.frame() |> 
+#   flextable()
+# #summary(m1_low)
+# #confint(m1_low, method = "Wald")
+# 
+# results_main[["low_kcal"]] <- list(m0 = m0_low, m1 = m1_low)
+# 
+# # ------------------------------------------------------------
+# # Outcome: prop_high_kcal
+# # ------------------------------------------------------------
+# m0_prop <- lmer(prop_high_kcal ~ order_group + (1 | subject), data = dat_main_final, REML = FALSE)
+# m1_prop <- lmer(prop_high_kcal ~ planned_condition + order_group + (1 | subject), data = dat_main_final, REML = FALSE)
+# 
+# 
+# anova(m0_prop, m1_prop) |> as.data.frame() |> 
+#   flextable()
+# #summary(m1_prop)
+# #confint(m1_prop, method = "Wald")
+# 
+# results_main[["prop_high_kcal"]] <- list(m0 = m0_prop, m1 = m1_prop)
+
+
 # ============================================================
 # Hauptanalyse: Condition Effekt für alle Outcomes
+# kompakte Übersichtstabelle
 # ============================================================
 
-results_main <- list()
+extract_main_row <- function(pack, outcome_label) {
+  fixed <- as.data.frame(pack$fixed) |>
+    tibble::rownames_to_column("term")
 
-# ------------------------------------------------------------
-# Outcome: total_kcal => RQ1, H1
-# ------------------------------------------------------------
-m0_total <- lmer(total_kcal ~ order_group + (1 | subject), data = dat_main_final, REML = FALSE)
-m1_total <- lmer(total_kcal ~ planned_condition + order_group + (1 | subject), data = dat_main_final, REML = FALSE)
+  ci <- as.data.frame(pack$ci) |>
+    tibble::rownames_to_column("term")
 
-anova(m0_total, m1_total) |> 
-  as.data.frame() |> 
-  flextable()
+  cond_row <- fixed |>
+    filter(term == "planned_conditionfasted")
 
-results_main[["total_kcal"]] <- list(m0 = m0_total, m1 = m1_total) 
+  cond_ci <- ci |>
+    filter(term == "planned_conditionfasted")
 
-# ------------------------------------------------------------
-# Outcome: high_kcal
-# ------------------------------------------------------------
-m0_high <- lmer(high_kcal ~ order_group + (1 | subject), data = dat_main_final, REML = FALSE)
-m1_high <- lmer(high_kcal ~ planned_condition + order_group + (1 | subject), data = dat_main_final, REML = FALSE)
+  tibble(
+    outcome = outcome_label,
+    estimate = cond_row$Estimate,
+    conf_low = cond_ci$`2.5 %`,
+    conf_high = cond_ci$`97.5 %`,
+    chisq = pack$comparison$Chisq[2],
+    df = pack$comparison$Df[2],
+    p_model = pack$comparison$`Pr(>Chisq)`[2]
+  )
+}
 
-anova(m0_high, m1_high) |> as.data.frame() |> 
-  flextable()
-#summary(m1_high)
-#confint(m1_high, method = "Wald")
+# Modelle fitten
+fit_total <- fit_main_effect(dat_main_final, "total_kcal", use_random_slope)
+fit_high  <- fit_main_effect(dat_main_final, "high_kcal", use_random_slope)
+fit_low   <- fit_main_effect(dat_main_final, "low_kcal", use_random_slope)
+fit_prop  <- fit_main_effect(dat_main_final, "prop_high_kcal", use_random_slope)
 
-results_main[["high_kcal"]] <- list(m0 = m0_high, m1 = m1_high)
+# Ergebnisse speichern
+results_main <- list(
+  total_kcal = fit_total,
+  high_kcal = fit_high,
+  low_kcal = fit_low,
+  prop_high_kcal = fit_prop
+)
 
-# ------------------------------------------------------------
-# Outcome: low_kcal
-# ------------------------------------------------------------
-m0_low <- lmer(low_kcal ~ order_group + (1 | subject), data = dat_main_final, REML = FALSE)
-m1_low <- lmer(low_kcal ~ planned_condition + order_group + (1 | subject), data = dat_main_final, REML = FALSE)
+# Reporting-Pakete erzeugen
+pack_total <- model_summary_pack(fit_total$m0, fit_total$m1, dat_main_final, "total_kcal")
+pack_high  <- model_summary_pack(fit_high$m0,  fit_high$m1,  dat_main_final, "high_kcal")
+pack_low   <- model_summary_pack(fit_low$m0,   fit_low$m1,   dat_main_final, "low_kcal")
+pack_prop  <- model_summary_pack(fit_prop$m0,  fit_prop$m1,  dat_main_final, "prop_high_kcal")
 
-anova(m0_low, m1_low) |> as.data.frame() |> 
-  flextable()
-#summary(m1_low)
-#confint(m1_low, method = "Wald")
+# Kompakte Ergebnistabelle
+tbl_main_results <- bind_rows(
+  extract_main_row(pack_total, "Total kcal"),
+  extract_main_row(pack_high,  "High-kcal foods"),
+  extract_main_row(pack_low,   "Low-kcal foods"),
+  extract_main_row(pack_prop,  "Proportion high-kcal")
+) |>
+  mutate(
+    estimate = round(estimate, 2),
+    conf_int = sprintf("[%.2f, %.2f]", conf_low, conf_high),
+    chisq = round(chisq, 2),
+    p_model = ifelse(p_model < .001, "< .001", sprintf("%.3f", p_model))
+  ) |>
+  select(outcome, estimate, conf_int, chisq, df, p_model) |>
+  rename(
+    Outcome = outcome,
+    `b (fasted)` = estimate,
+    `95% CI` = conf_int,
+    `χ²` = chisq,
+    `df` = df,
+    `p` = p_model
+  )
 
-results_main[["low_kcal"]] <- list(m0 = m0_low, m1 = m1_low)
-
-# ------------------------------------------------------------
-# Outcome: prop_high_kcal
-# ------------------------------------------------------------
-m0_prop <- lmer(prop_high_kcal ~ order_group + (1 | subject), data = dat_main_final, REML = FALSE)
-m1_prop <- lmer(prop_high_kcal ~ planned_condition + order_group + (1 | subject), data = dat_main_final, REML = FALSE)
-
-
-anova(m0_prop, m1_prop) |> as.data.frame() |> 
-  flextable()
-#summary(m1_prop)
-#confint(m1_prop, method = "Wald")
-
-results_main[["prop_high_kcal"]] <- list(m0 = m0_prop, m1 = m1_prop)
-
+tbl_main_results |>
+  flextable() |>
+  theme_booktabs() |>
+  autofit()
 ```
+
+In the fasted condition, it is estimated that approximately 2 kcal more were consumed than in the satiated state -\> practically zero.
+
+-\> all p-values are \> .05
 
 ## Session Effects
 
 ```{r}
+# # ============================================================
+# # Sensitivität: Periodeneffekt von session (T1 vs T2)
+# # ============================================================
+# 
+# m_period0 <- lmer(
+#   total_kcal ~ planned_condition + order_group + (1 | subject),
+#   data = dat_main_final,
+#   REML = FALSE
+# )
+# 
+# m_period1 <- lmer(
+#   total_kcal ~ planned_condition + session + order_group + (1 | subject),
+#   data = dat_main_final,
+#   REML = FALSE
+# )
+# 
+# anova(m_period0, m_period1)
+# summary(m_period1)
+# confint(m_period1, method = "Wald")
+
 # ============================================================
-# Sensitivität: Periodeneffekt von session (T1 vs T2)
+# Session effect: kompakte Ergebnistabelle
 # ============================================================
 
 m_period0 <- lmer(
-  total_kcal ~ planned_condition + order_group + (1 | subject),
+  total_kcal ~ planned_condition + (1 | subject),
   data = dat_main_final,
   REML = FALSE
 )
 
 m_period1 <- lmer(
-  total_kcal ~ planned_condition + session + order_group + (1 | subject),
+  total_kcal ~ planned_condition + session + (1 | subject),
   data = dat_main_final,
   REML = FALSE
 )
 
-anova(m_period0, m_period1)
-summary(m_period1)
-confint(m_period1, method = "Wald")
+comp_period <- anova(m_period0, m_period1)
+
+coef_period <- as.data.frame(summary(m_period1)$coefficients) |>
+  tibble::rownames_to_column("term")
+
+ci_period <- as.data.frame(confint(m_period1, method = "Wald")) |>
+  tibble::rownames_to_column("term") |>
+  filter(!term %in% c(".sig01", ".sigma"))
+
+tbl_period <- coef_period |>
+  left_join(ci_period, by = "term") |>
+  filter(term %in% c("planned_conditionfasted", "sessionT2")) |>
+  mutate(
+    Effect = c("Fasted vs. satiated", "T2 vs. T1"),
+    Estimate = round(Estimate, 2),
+    CI = sprintf("[%.2f, %.2f]", `2.5 %`, `97.5 %`),
+    p = ifelse(`Pr(>|t|)` < .001, "< .001", sprintf("%.3f", `Pr(>|t|)`))
+  ) |>
+  select(Effect, Estimate, CI, p)
+
+tbl_period |>
+  flextable() |>
+  theme_booktabs() |>
+  bold(part = "header") |>
+  autofit()
+
+```
+
+Modellvergleich:
+
+```{r}
+# Modellvergleich 
+tibble(
+  Comparison = "Adding session",
+  Chisq = round(comp_period$Chisq[2], 2),
+  df = comp_period$Df[2],
+  p = sprintf("%.3f", comp_period$`Pr(>Chisq)`[2])
+) |>
+  flextable() |>
+  theme_booktabs() |>
+  bold(part = "header") |>
+  autofit()
 ```
 
 # Moderation analyses
@@ -1038,7 +1179,7 @@ confint(m_period1, method = "Wald")
 
 ```{r}
 # ============================================================
-# Moderationen Schritt fuer Schritt: total_kcal
+# Moderationen Schritt für Schritt: total_kcal
 # ============================================================
 # ------------------------------------------------------------
 # Mini QC Function: How many complete cases are there in a moderated sample?
@@ -1065,6 +1206,30 @@ stop_if_no_cases <- function(qc_tbl) {
   }
 }
 
+fit_moderation <- function(dat, outcome, moderator) {
+  qc_tbl <- qc_mod_sample(dat, outcome = outcome, mod = moderator)
+  stop_if_no_cases(qc_tbl)
+
+  f_add <- as.formula(
+    paste0(outcome, " ~ planned_condition + ", moderator, " + (1 | subject)")
+  )
+
+  f_int <- as.formula(
+    paste0(outcome, " ~ planned_condition * ", moderator, " + (1 | subject)")
+  )
+
+  m_add <- lmer(f_add, data = dat, REML = FALSE)
+  m_int <- lmer(f_int, data = dat, REML = FALSE)
+
+  list(
+    qc = qc_tbl,
+    add = m_add,
+    int = m_int,
+    anova = anova(m_add, m_int),
+    fixed = summary(m_int)$coefficients,
+    ci = confint(m_int, method = "Wald")
+  )
+}
 
 ```
 
@@ -1082,27 +1247,27 @@ m_srs_int = plus interaction; ANOVA tests whether the interaction provides addit
 # RQ2: H2
 # ------------------------------------------------------------
 
-qc_mod_sample(dat_main_srs, outcome = "total_kcal", mod = "srs_c")
-
-m_srs_add <- lmer(
-  total_kcal ~ planned_condition + srs_c + order_group + (1 | subject),
-  data = dat_main_srs,
-  REML = FALSE
+srs_res <- fit_moderation(
+  dat = dat_main_srs,
+  outcome = "total_kcal",
+  moderator = "srs_c"
 )
 
-m_srs_int <- lmer(
-  total_kcal ~ planned_condition * srs_c + order_group + (1 | subject),
-  data = dat_main_srs,
-  REML = FALSE
-)
-
-anova(m_srs_add, m_srs_int)
-summary(m_srs_int)
-confint(m_srs_int, method = "Wald")
-
-model_fixed_table(m_srs_int)
+srs_res$qc |> flextable()
+as.data.frame(srs_res$anova) |> flextable()
+model_fixed_table(srs_res$int)
 
 ```
+
+m_srs_add -\> The interaction model does not fit significantly better than the additive model. (p \> .518
+
+Intercept -\> A person with an average SRS is estimated to consume approximately 372.6 kcal when satiated.
+
+planned_conditionfasted = 2.028 -\> With average stress reactivity, it was estimated that approximately 2 kcal more were consumed in the fasted state than in the satiated state. =\> not significant p \> .937
+
+**H2a:** srs_c -\> If srs_c increases by 1 unit, total_kcal is estimated to change by approximately -73.17 kcal in the satiated condition.
+
+**H2b:** planned_conditionfasted:srs_c -\> For every additional unit of SRS, the difference between the fasted and satiated states is estimated to be 48.45 kcal lower. This does not suggest a stronger positive correlation in the fasted state
 
 ### Moderation 2: CERQ
 
@@ -1115,49 +1280,36 @@ model_fixed_table(m_srs_int)
 # ------------------------------------------------------------
 
 # CERQ adaptive
-qc_mod_sample(dat_main_cerq_adaptive, outcome = "total_kcal", mod = "cerq_adaptive_c")
-
-m_cerq_adapt_add <- lmer(
-  total_kcal ~ planned_condition + cerq_adaptive_c + order_group + (1 | subject),
-  data = dat_main_cerq_adaptive,
-  REML = FALSE
+cerq_adapt_res <- fit_moderation(
+  dat = dat_main_cerq_adaptive,
+  outcome = "total_kcal",
+  moderator = "cerq_adaptive_c"
 )
 
-m_cerq_adapt_int <- lmer(
-  total_kcal ~ planned_condition * cerq_adaptive_c + order_group + (1 | subject),
-  data = dat_main_cerq_adaptive,
-  REML = FALSE
-)
+cerq_adapt_res$qc |> flextable()
+as.data.frame(cerq_adapt_res$anova) |> flextable()
+model_fixed_table(cerq_adapt_res$int)
 
-anova(m_cerq_adapt_add, m_cerq_adapt_int)
-summary(m_cerq_adapt_int)
-confint(m_cerq_adapt_int, method = "Wald")
-
-model_fixed_table(m_cerq_adapt_int)
 
 # CERQ maladaptive
-qc_mod_sample(dat_main_cerq_maladaptive, outcome = "total_kcal", mod = "cerq_maladaptive_c")
-
-m_cerq_mal_add <- lmer(
-  total_kcal ~ planned_condition + cerq_maladaptive_c + order_group + (1 | subject),
-  data = dat_main_cerq_maladaptive,
-  REML = FALSE
+cerq_mal_res <- fit_moderation(
+  dat = dat_main_cerq_maladaptive,
+  outcome = "total_kcal",
+  moderator = "cerq_maladaptive_c"
 )
 
-m_cerq_mal_int <- lmer(
-  total_kcal ~ planned_condition * cerq_maladaptive_c + order_group + (1 | subject),
-  data = dat_main_cerq_maladaptive,
-  REML = FALSE
-)
-
-anova(m_cerq_mal_add, m_cerq_mal_int)
-summary(m_cerq_mal_int)
-confint(m_cerq_mal_int, method = "Wald")
-
-model_fixed_table(m_cerq_mal_int)
+cerq_mal_res$qc |> flextable()
+as.data.frame(cerq_mal_res$anova) |> flextable()
+model_fixed_table(cerq_mal_res$int)
 
 
 ```
+
+m_cerq_adapt_add -\> There is no evidence that adaptive CERQ moderates the condition effect. p = .523
+
+H3a was not supported: there was no evidence that adaptive cognitive emotion regulation moderated the association between metabolic condition and total caloric intake. -\> direction was even positive
+
+H3b was not supported: maladaptive cognitive emotion regulation was not significantly associated with greater caloric intake, and no significant interaction with metabolic condition was observed. -\> direction was even negative
 
 ### Moderation 3: STADI Trait Anxiety
 
@@ -1168,46 +1320,34 @@ model_fixed_table(m_cerq_mal_int)
 # Sample: dat_main_stadit
 # ------------------------------------------------------------
 
-qc_mod_sample(dat_main_stadit, outcome = "total_kcal", mod = "stadit_c")
-
-m_stadit_add <- lmer(
-  total_kcal ~ planned_condition + stadit_c + order_group + (1 | subject),
-  data = dat_main_stadit,
-  REML = FALSE
+# total_kcal
+stadit_res <- fit_moderation(
+  dat = dat_main_stadit,
+  outcome = "total_kcal",
+  moderator = "stadit_c"
 )
 
-m_stadit_int <- lmer(
-  total_kcal ~ planned_condition * stadit_c + order_group + (1 | subject),
-  data = dat_main_stadit,
-  REML = FALSE
-)
-
-anova(m_stadit_add, m_stadit_int)
-summary(m_stadit_int)
-confint(m_stadit_int, method = "Wald")
-
-model_fixed_table(m_stadit_int)
+stadit_res$qc |> flextable()
+as.data.frame(stadit_res$anova) |> flextable()
+model_fixed_table(stadit_res$int)
 
 # high_kcal
-m_stadit_high_add <- lmer(
-  high_kcal ~ planned_condition + stadit_c + order_group + (1 | subject),
-  data = dat_main_stadit,
-  REML = FALSE
+stadit_high_res <- fit_moderation(
+  dat = dat_main_stadit,
+  outcome = "high_kcal",
+  moderator = "stadit_c"
 )
 
-m_stadit_high_int <- lmer(
-  high_kcal ~ planned_condition * stadit_c + order_group + (1 | subject),
-  data = dat_main_stadit,
-  REML = FALSE
-)
-
-anova(m_stadit_high_add, m_stadit_high_int)
-summary(m_stadit_high_int)
-confint(m_stadit_high_int, method = "Wald")
-
-model_fixed_table(m_stadit_high_int)
+as.data.frame(stadit_high_res$anova) |> flextable()
+model_fixed_table(stadit_high_res$int)
 
 ```
+
+m_stadit_add -\> The interaction model does not fit significantly better than the additive model. = There is no evidence that trait anxiety moderates the effect of metabolic condition on total_kcal.
+
+**H4a was not supported:** trait anxiety was not significantly associated with total caloric intake or high-calorie intake.
+
+**H4b was not supported:** there was no evidence that trait anxiety moderated the effect of metabolic condition on either total caloric intake or high-calorie intake.
 
 ### Moderation 4: EDEQ & SSES
 
@@ -1219,54 +1359,45 @@ model_fixed_table(m_stadit_high_int)
 # H5: 
 # ------------------------------------------------------------
 
-qc_mod_sample(dat_main_edeq, outcome = "total_kcal", mod = "edeq_restraint_c")
-
-m_edeq_add <- lmer(
-  total_kcal ~ planned_condition + edeq_restraint_c + order_group + (1 | subject),
-  data = dat_main_edeq,
-  REML = FALSE
+edeq_res <- fit_moderation(
+  dat = dat_main_edeq,
+  outcome = "total_kcal",
+  moderator = "edeq_restraint_c"
 )
 
-m_edeq_int <- lmer(
-  total_kcal ~ planned_condition * edeq_restraint_c + order_group + (1 | subject),
-  data = dat_main_edeq,
-  REML = FALSE
-)
+edeq_res$qc |> flextable()
+as.data.frame(edeq_res$anova) |> flextable()
+model_fixed_table(edeq_res$int)
 
-anova(m_edeq_add, m_edeq_int)
-summary(m_edeq_int)
-confint(m_edeq_int, method = "Wald")
 
-model_fixed_table(m_edeq_int)
+```
 
+## Moderation 4: SSES
+
+```{r}
 # ------------------------------------------------------------
 # H5b: Stress Eating (SSES)
 # Outcome: total_kcal
 # Sample: dat_main_sses
 # ------------------------------------------------------------
 
-qc_mod_sample(dat_main_sses, outcome = "total_kcal", mod = "sses_c")
-
-m_sses_add <- lmer(
-  total_kcal ~ planned_condition + sses_c + order_group + (1 | subject),
-  data = dat_main_sses,
-  REML = FALSE
+sses_res <- fit_moderation(
+  dat = dat_main_sses,
+  outcome = "total_kcal",
+  moderator = "sses_c"
 )
 
-m_sses_int <- lmer(
-  total_kcal ~ planned_condition * sses_c + order_group + (1 | subject),
-  data = dat_main_sses,
-  REML = FALSE
-)
-
-anova(m_sses_add, m_sses_int)
-summary(m_sses_int)
-confint(m_sses_int, method = "Wald")
-
-
-model_fixed_table(m_sses_int)
-
+sses_res$qc |> flextable()
+as.data.frame(sses_res$anova) |> flextable()
+model_fixed_table(sses_res$int)
 ```
+
+m_edeq_add -\> The interaction model does not fit significantly better than the additive model = There is no evidence that restrained eating moderates the effect of metabolic condition on total_kcal.
+
+H5 was not supported for restrained eating: EDE-Q restraint was neither significantly associated with total caloric intake nor did it significantly moderate the effect of metabolic condition.\
+-\> but: With increasing restraint in eating, the difference between fasted and satiated states becomes slightly more positive in numerical terms.
+
+H5 was also not supported for stress eating tendencies: SSES showed neither a significant main effect on total caloric intake nor a significant interaction with metabolic condition.
 
 ## Store models
 
@@ -1276,16 +1407,13 @@ model_fixed_table(m_sses_int)
 # ============================================================
 
 results_mod_total <- list(
-  srs = list(add = m_srs_add, int = m_srs_int),
-  sses = list(add = m_sses_add, int = m_sses_int),
-
-  cerq_adapt = list(add = m_cerq_adapt_add, int = m_cerq_adapt_int),
-  cerq_mal   = list(add = m_cerq_mal_add,   int = m_cerq_mal_int),
-
-  stadit = list(add = m_stadit_add, int = m_stadit_int),
-  edeq   = list(add = m_edeq_add,   int = m_edeq_int)
+  srs = list(add = srs_res$add, int = srs_res$int),
+  sses = list(add = sses_res$add, int = sses_res$int),
+  cerq_adapt = list(add = cerq_adapt_res$add, int = cerq_adapt_res$int),
+  cerq_mal   = list(add = cerq_mal_res$add, int = cerq_mal_res$int),
+  stadit = list(add = stadit_res$add, int = stadit_res$int),
+  edeq   = list(add = edeq_res$add, int = edeq_res$int)
 )
-
 
 ```
 
@@ -1299,41 +1427,28 @@ results_mod_total <- list(
 mod_tests_total <- tibble(
   moderator = c("srs", "sses", "cerq_adapt", "cerq_mal", "stadit", "edeq"),
   p_int = c(
-    anova(m_srs_add, m_srs_int)$`Pr(>Chisq)`[2],
-    anova(m_sses_add, m_sses_int)$`Pr(>Chisq)`[2],
-    anova(m_cerq_adapt_add, m_cerq_adapt_int)$`Pr(>Chisq)`[2],
-    anova(m_cerq_mal_add, m_cerq_mal_int)$`Pr(>Chisq)`[2],
-    anova(m_stadit_add, m_stadit_int)$`Pr(>Chisq)`[2],
-    anova(m_edeq_add, m_edeq_int)$`Pr(>Chisq)`[2]
+    srs_res$anova$`Pr(>Chisq)`[2],
+    sses_res$anova$`Pr(>Chisq)`[2],
+    cerq_adapt_res$anova$`Pr(>Chisq)`[2],
+    cerq_mal_res$anova$`Pr(>Chisq)`[2],
+    stadit_res$anova$`Pr(>Chisq)`[2],
+    edeq_res$anova$`Pr(>Chisq)`[2]
   )
 )
 
-mod_tests_total
-
-
-```
-
-## FDR correction
-
-Apply false discovery rate correction
-
-```{r}
-mod_tests_total <- mod_tests_total |>
+mod_tests_total |>
   mutate(
-    p_fdr = p.adjust(p_int, method = "BH"),
-    sig_fdr = p_fdr < 0.05
-  )
+    p_int = sprintf("%.3f", p_int)
+  ) |>
+  flextable() |>
+  theme_booktabs() |>
+  autofit()
 
-mod_tests_total |> flextable()
 ```
 
 # Sensitivity analyses
 
 ## Mismatch check
-
-**What:** Test robustness by excluding sessions with mismatches.
-
-**Why:** This demonstrates that the main results are not driven by non-compliance. If I consider only the metabolically consistent sessions, does the main effect still hold?
 
 ```{r}
 # ============================================================
@@ -1394,17 +1509,9 @@ print(model_summary_pack(mods_b$m0, mods_b$m1, dat_main_nomismatch, "total_kcal"
 
 ```
 
+Excluding sessions with metabolic mismatches did not materially change the main result.
+
 ## Log transform
-
-Log transformation typically:
-
--   makes large values less dominant
-
--   makes the distribution more symmetrical
-
--   often produces slightly cleaner residuals
-
-**What:** Analyze log1p(total_kcal) as a robustness check. Does my main effect persist if I statistically reduce the skewness of the outcome distribution?
 
 ```{r}
 # ============================================================
@@ -1422,6 +1529,8 @@ pack_log$fixed
 pack_log$ci
 
 ```
+
+The null effect remained unchanged when total caloric intake was log-transformed, indicating that the main finding was not driven by skewness of the outcome distribution.
 
 ## Outlier check
 
@@ -1451,6 +1560,12 @@ print(model_summary_pack(mods_trim$m0, mods_trim$m1, dat_main_no_out, "total_kca
 
 ```
 
+-   **with outlier**: `planned_conditionfasted = 2.03`, **p = .938**
+
+-   **without outlier**: `planned_conditionfasted = 9.13`, **p = .738**
+
+The null effect of metabolic condition persisted after excluding extreme high-intake observations, suggesting that the main finding was not driven by outliers.
+
 # Plots and diagnostics
 
 ## Plots
@@ -1473,7 +1588,7 @@ dat_main_final |>
 # ============================================================
 
 m_srs_int <- lmer(
-  total_kcal ~ planned_condition * srs_c + order_group + (1 | subject),
+  total_kcal ~ planned_condition * srs_c + (1 | subject),
   data = dat_main_srs,
   REML = FALSE
 )
@@ -1487,13 +1602,7 @@ srs_seq <- seq(
 
 pred_grid <- expand.grid(
   planned_condition = levels(dat_main_srs$planned_condition),
-  srs_c = srs_seq,
-  order_group = levels(dat_main_srs$order_group)[1]
-)
-
-pred_grid$order_group <- factor(
-  pred_grid$order_group,
-  levels = levels(dat_main_srs$order_group)
+  srs_c = srs_seq
 )
 
 pred_grid$pred <- predict(m_srs_int, newdata = pred_grid, re.form = NA)
