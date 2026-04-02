@@ -1100,6 +1100,21 @@ class(survey_t2$stim9)
 
 survey_all <- bind_rows(survey_t1, survey_t2)
 
+# QC: Session-Verfügbarkeit zentraler Trait-Items
+survey_all |>
+  summarise(
+    srs_T1   = sum(session == "T1" & !is.na(srs1_srs1)),
+    srs_T2   = sum(session == "T2" & !is.na(srs1_srs1)),
+    sses_T1  = sum(session == "T1" & !is.na(sses_sses1)),
+    sses_T2  = sum(session == "T2" & !is.na(sses_sses1)),
+    stadit_T1 = sum(session == "T1" & !is.na(stadit_stadit2)),
+    stadit_T2 = sum(session == "T2" & !is.na(stadit_stadit2)),
+    edeq_T1  = sum(session == "T1" & !is.na(edeq01to12_edeq1)),
+    edeq_T2  = sum(session == "T2" & !is.na(edeq01to12_edeq1)),
+    cerq_T1  = sum(session == "T1" & !is.na(cerq_cerq1)),
+    cerq_T2  = sum(session == "T2" & !is.na(cerq_cerq1))
+  )
+
 # sagt mir wie viele Person–Session Kombinationen es gibt
 survey_all |>
   distinct(fastress_id, session) |>
@@ -1149,7 +1164,10 @@ hunger_long |>
 
 ```{r}
 # ============================================================
-# Survey scoring: Trait Moderatoren aus Survey T1 und T2
+# Survey scoring: Trait-Moderatoren aus den Survey-Daten
+# Verfügbarkeit:
+# - T2: SRS, CERQ, STADI-T
+# - T1: SSES, EDEQ, STADI-T
 # ============================================================
 
 # Funktion für Skalenmittelwerte (mit Mindestanzahl beantworteter Items)
@@ -1238,6 +1256,9 @@ cerq_reverse_items <- character(0)
 
 
 # SRS Reverse Items via Itemnummern matchen
+# SRS ist nur im T2-Survey vorhanden.
+# Die Umpolung wird auf survey_all angewendet;
+# auf T1-Zeilen bleiben die SRS-Items einfach NA.
 
 srs_reverse_numbers <- c(
   3, 6, 10, 11, 12, 14, 15, 17, 19,
@@ -1257,6 +1278,29 @@ srs_reverse_items
 
 stopifnot(length(srs_reverse_items) == length(srs_reverse_numbers))
 
+survey_all |>
+  transmute(across(all_of(items_srs), parse_num)) |>
+  pivot_longer(everything(), names_to = "item", values_to = "value") |>
+  group_by(item) |>
+  summarise(
+    min_raw = min(value, na.rm = TRUE),
+    max_raw = max(value, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  arrange(item)
+
+survey_all |>
+  count(srs14_srs14, sort = TRUE)
+
+survey_all |>
+  count(srs17_srs17, sort = TRUE)
+
+survey_all |>
+  summarise(across(all_of(items_srs), ~ sum(is.na(.))))
+
+survey_all |>
+  select(fastress_id, session, srs14_srs14, srs17_srs17) |>
+  arrange(fastress_id, session)
 # ============================================================
 # Apply reverse scoring
 # ============================================================
@@ -1338,6 +1382,9 @@ transmute(
 #Achtung: Cerq wieder auf 12 und 9 setzten
 
 # 5) QC pro Session
+# Erwartung:
+# - T2: SRS, CERQ, STADI-T
+# - T1: SSES, EDEQ, STADI-T
 survey_scales_session |>
   group_by(session) |>
   summarise(
@@ -1352,34 +1399,41 @@ survey_scales_session |>
   )
 
 # ============================================================
-# QC: SRS Umpolung Check
+# QC: SRS Umpolung Check (nur T2)
 # ============================================================
-
 # srs_min >= 1
 # srs_max <= 3
-
 survey_scales_session |>
+  group_by(session) |>
   summarise(
     srs_min = min(srs_mean, na.rm = TRUE),
     srs_max = max(srs_mean, na.rm = TRUE),
     srs_mean_overall = mean(srs_mean, na.rm = TRUE),
-    srs_sd = sd(srs_mean, na.rm = TRUE)
+    srs_sd = sd(srs_mean, na.rm = TRUE),
+    .groups = "drop"
   )
 
 
-# 6) Person Level Traits ziehen: T1 wenn vorhanden, sonst T2
+# 6) Person-Level Traits ziehen
+# - SRS nur aus T2
+# - CERQ nur aus T2
+# - SSES nur aus T1
+# - EDEQ nur aus T1
+# - STADI-T in T1 und T2; hier wird T1 bevorzugt, sonst T2
+
 survey_person <- survey_scales_session |>
   arrange(fastress_id, session) |>
   group_by(fastress_id) |>
   summarise(
-    srs_mean = coalesce(srs_mean[session == "T1"][1], srs_mean[session == "T2"][1]),
-    sses_mean = coalesce(sses_mean[session == "T1"][1], sses_mean[session == "T2"][1]),
+    srs_mean = srs_mean[session == "T2"][1],
+    sses_mean = sses_mean[session == "T1"][1],
     stadit_trait_anxiety = coalesce(
-  stadit_trait_anxiety[session == "T1"][1],
-  stadit_trait_anxiety[session == "T2"][1]),
-    edeq_restraint = coalesce(edeq_restraint[session == "T1"][1], edeq_restraint[session == "T2"][1]),
-    cerq_adaptive_mean = coalesce(cerq_adaptive_mean[session == "T1"][1], cerq_adaptive_mean[session == "T2"][1]),
-cerq_maladaptive_mean = coalesce(cerq_maladaptive_mean[session == "T1"][1], cerq_maladaptive_mean[session == "T2"][1]),
+      stadit_trait_anxiety[session == "T1"][1],
+      stadit_trait_anxiety[session == "T2"][1]
+    ),
+    edeq_restraint = edeq_restraint[session == "T1"][1],
+    cerq_adaptive_mean = cerq_adaptive_mean[session == "T2"][1],
+    cerq_maladaptive_mean = cerq_maladaptive_mean[session == "T2"][1],
     .groups = "drop"
   )
 
