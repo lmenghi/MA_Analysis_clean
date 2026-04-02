@@ -426,14 +426,38 @@ food_long_raw |> count(flag_negative)
 food_session_raw <- food_long_raw |>
   group_by(fastress_id, session) |>
   summarise(
-    total_g = sum(consumed_g_clean, na.rm = TRUE),
+    n_valid_items = sum(!is.na(consumed_g_clean)),
+    total_g = if_else(
+      n_valid_items > 0,
+      sum(consumed_g_clean, na.rm = TRUE),
+      NA_real_
+    ),
     n_items = n(),
     n_flagged = sum(flag_negative == TRUE, na.rm = TRUE),
-    .groups = "drop")
+    .groups = "drop"
+  )
 
 food_session_raw |> count(session)
 summary(food_session_raw$total_g)
 # =  insgesamt konsumierte Gramm pro Person × Session.
+
+# ============================================================
+# Food QC: valid item counts per session
+# ============================================================
+
+food_long_raw |>
+  group_by(fastress_id, session) |>
+  summarise(
+    n_valid_items = sum(!is.na(consumed_g_clean)),
+    .groups = "drop"
+  ) |>
+  count(n_valid_items)
+
+food_session_raw |>
+  summarise(
+    n_missing_total_g = sum(is.na(total_g)),
+    n_zero_total_g = sum(total_g == 0, na.rm = TRUE)
+  )
 
 # ============================================================
 # Food QC: check extreme values (session totals)
@@ -1878,6 +1902,18 @@ prop_high_kcal = if_else(
     
     # Remove grouping after summarisation
     .groups = "drop"
+  )
+
+# ============================================================
+# Food QC: kcal missingness after aggregation
+# ============================================================
+
+food_session_raw_kcal |>
+  summarise(
+    n_missing_total_kcal = sum(is.na(total_kcal)),
+    n_missing_high_kcal = sum(is.na(high_kcal)),
+    n_missing_low_kcal = sum(is.na(low_kcal)),
+    n_zero_total_kcal = sum(total_kcal == 0, na.rm = TRUE)
   )
 
 # Check whether total_kcal really equals high plus low.
