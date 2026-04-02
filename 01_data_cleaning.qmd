@@ -1103,16 +1103,16 @@ survey_all <- bind_rows(survey_t1, survey_t2)
 # QC: Session-Verfügbarkeit zentraler Trait-Items
 survey_all |>
   summarise(
-    srs_T1   = sum(session == "T1" & !is.na(srs1_srs1)),
-    srs_T2   = sum(session == "T2" & !is.na(srs1_srs1)),
-    sses_T1  = sum(session == "T1" & !is.na(sses_sses1)),
-    sses_T2  = sum(session == "T2" & !is.na(sses_sses1)),
-    stadit_T1 = sum(session == "T1" & !is.na(stadit_stadit2)),
-    stadit_T2 = sum(session == "T2" & !is.na(stadit_stadit2)),
-    edeq_T1  = sum(session == "T1" & !is.na(edeq01to12_edeq1)),
-    edeq_T2  = sum(session == "T2" & !is.na(edeq01to12_edeq1)),
-    cerq_T1  = sum(session == "T1" & !is.na(cerq_cerq1)),
-    cerq_T2  = sum(session == "T2" & !is.na(cerq_cerq1))
+    srs_T1    = sum(session == "T1" & !is.na(parse_num(srs1_srs1))),
+    srs_T2    = sum(session == "T2" & !is.na(parse_num(srs1_srs1))),
+    sses_T1   = sum(session == "T1" & !is.na(parse_num(sses_sses1))),
+    sses_T2   = sum(session == "T2" & !is.na(parse_num(sses_sses1))),
+    stadit_T1 = sum(session == "T1" & !is.na(parse_num(stadit_stadit2))),
+    stadit_T2 = sum(session == "T2" & !is.na(parse_num(stadit_stadit2))),
+    edeq_T1   = sum(session == "T1" & !is.na(edeq_recode(edeq01to12_edeq1))),
+    edeq_T2   = sum(session == "T2" & !is.na(edeq_recode(edeq01to12_edeq1))),
+    cerq_T1   = sum(session == "T1" & !is.na(parse_num(cerq_cerq1))),
+    cerq_T2   = sum(session == "T2" & !is.na(parse_num(cerq_cerq1)))
   )
 
 # sagt mir wie viele Person–Session Kombinationen es gibt
@@ -1140,10 +1140,18 @@ names(survey_t2) |>
   stringr::str_subset(regex("hunger", ignore_case = TRUE))
 
 hunger_t1 <- survey_t1 |>
-  select(fastress_id, session, hunger_hunger)
+  transmute(
+    fastress_id,
+    session,
+    hunger_hunger = parse_num(hunger_hunger)
+  )
 
 hunger_t2 <- survey_t2 |>
-  select(fastress_id, session, hunger_hunger)
+  transmute(
+    fastress_id,
+    session,
+    hunger_hunger = parse_num(hunger_hunger)
+  )
 
 hunger_long <- bind_rows(hunger_t1, hunger_t2)
 
@@ -1190,6 +1198,23 @@ row_mean_safe <- function(df, items, min_n = 3) {
 reverse_score <- function(x, min_val = 1, max_val = 5) {
   x_num <- readr::parse_number(str_replace(as.character(x), ",", "."))
   ifelse(is.na(x_num), NA_real_, (max_val + min_val) - x_num)
+}
+
+edeq_recode <- function(x) {
+  x <- stringr::str_trim(as.character(x))
+  x <- stringr::str_to_upper(x)
+
+  dplyr::case_when(
+    is.na(x) | x == "" ~ NA_real_,
+    x == "AO02" ~ 1,
+    x == "AO03" ~ 2,
+    x == "AO04" ~ 3,
+    x == "AO05" ~ 4,
+    x == "AO06" ~ 5,
+    x == "AO07" ~ 6,
+    x == "AO08" ~ 7,
+    TRUE ~ NA_real_
+  )
 }
 
 # Items finden (passen zu clean_names() der echten Dateien)
@@ -1307,9 +1332,38 @@ survey_all |>
 
 survey_all_scored <- survey_all |>
   mutate(
-    across(all_of(srs_reverse_items), ~ reverse_score(.x, min_val = 1, max_val = 3))
+    across(all_of(srs_reverse_items), ~ reverse_score(.x, min_val = 1, max_val = 3)),
+    across(all_of(edeq_restraint_items), edeq_recode)
   )
 
+survey_all |>
+  transmute(
+    raw = edeq01to12_edeq1,
+    recoded = edeq_recode(edeq01to12_edeq1)
+  ) |>
+  count(raw, recoded) |>
+  arrange(raw)
+
+survey_all_scored |>
+  transmute(across(all_of(edeq_restraint_items), identity)) |>
+  pivot_longer(everything(), names_to = "item", values_to = "value") |>
+  group_by(item) |>
+  summarise(
+    n_nonmiss = sum(!is.na(value)),
+    min_recoded = ifelse(sum(!is.na(value)) > 0, min(value, na.rm = TRUE), NA_real_),
+    max_recoded = ifelse(sum(!is.na(value)) > 0, max(value, na.rm = TRUE), NA_real_),
+    .groups = "drop"
+  )
+
+survey_all |>
+  select(all_of(edeq_restraint_items)) |>
+  pivot_longer(
+    everything(),
+    names_to = "item",
+    values_to = "raw"
+  ) |>
+  count(item, raw) |>
+  arrange(item, raw)
 ```
 
 ```{r}
