@@ -293,6 +293,8 @@ C) plus the interaction between planned_condition and order_group.
 
 -\> If C does not perform better than B, there is no evidence that the condition effect depends on the order.
 
+### Baseline vs. additive order model
+
 ```{r}
 m_base <- lmer(
   total_kcal ~ planned_condition + (1 | subject),
@@ -313,8 +315,24 @@ m_order_int <- lmer(
 )
 
 anova(m_base, m_order_add)
+
+```
+
+**Interpretation**
+
+p = .1644 anova(m_base, m_order_add) is not significant –\> no statistical evidence that the order has an additional main effect on total_kcal.
+
+### Additive order model vs. interaction model
+
+```{r}
 anova(m_order_add, m_order_int)
 
+
+```
+
+### Final order model estimates
+
+```{r}
 summary(m_order_int)
 confint(m_order_int, method = "Wald")
 
@@ -323,8 +341,6 @@ model_fixed_table(m_order_int)
 ```
 
 **Interpretation**
-
-p = .1644 anova(m_base, m_order_add) is not significant –\> no statistical evidence that the order has an additional main effect on total_kcal.
 
 p = .1302 anova(m_order_add, m_order_int) is not significant –\> no evidence that order moderates the condition effect
 
@@ -638,6 +654,53 @@ wilcox.test(
 
 Shapiro–Wilk p = **.0263**. -\> distribution was not met -\> Wilcoxon: V = 167, p \< .001
 
+# Subjective stress reactivity (during MRI)
+
+```{r}
+# ============================================================
+# MRI-based subjective stress reactivity
+# Operationalisation: strong stress minus mild stress
+# Person-level mean across available sessions
+# ============================================================
+
+mri_reactivity_person <- stress_indices_per_session |>
+  filter(!is.na(mild_mean), !is.na(strong_mean)) |>
+  transmute(
+    fastress_id,
+    session,
+    mri_reactivity_session = strong_mean - mild_mean
+  ) |>
+  group_by(fastress_id) |>
+  summarise(
+    mri_reactivity = mean(mri_reactivity_session, na.rm = TRUE),
+    n_sessions_mri = sum(!is.na(mri_reactivity_session)),
+    .groups = "drop"
+  ) |>
+  mutate(
+    mri_reactivity_c = as.numeric(
+      scale(mri_reactivity, center = TRUE, scale = FALSE)
+    )
+  )
+
+# Merge into final main dataset
+dat_main_final <- dat_main_final |>
+  left_join(
+    mri_reactivity_person,
+    by = "fastress_id"
+  )
+```
+
+### Association with questionnaire-based SRS
+
+```{r}
+dat_main_final |>
+  distinct(fastress_id, srs_c, mri_reactivity_c) |>
+  summarise(
+    r_srs_mri = cor(srs_c, mri_reactivity_c, use = "complete.obs")
+  ) |>
+  flextable()
+```
+
 # Moderator samples
 
 ## Moderator-specific datasets
@@ -648,6 +711,7 @@ Shapiro–Wilk p = **.0263**. -\> distribution was not met -\> Wilcoxon: V = 16
 # ============================================================
 
 dat_main_srs <- dat_main_final |> filter(!is.na(srs_c))
+dat_main_mri <- dat_main_final |> filter(!is.na(mri_reactivity_c))
 dat_main_sses <- dat_main_final |> filter(!is.na(sses_c))
 dat_main_cerq_adaptive <- dat_main_final |> filter(!is.na(cerq_adaptive_c))
 dat_main_cerq_maladaptive <- dat_main_final |> filter(!is.na(cerq_maladaptive_c))
@@ -672,6 +736,7 @@ sample_n <- tibble(
   sample = c(
     "dat_main_final",
     "dat_main_srs",
+    "dat_main_mri",
     "dat_main_sses",
     "dat_main_cerq_adaptive",
     "dat_main_cerq_maladaptive",
@@ -681,6 +746,7 @@ sample_n <- tibble(
   n_rows = c(
     nrow(dat_main_final),
     nrow(dat_main_srs),
+    nrow(dat_main_mri),
     nrow(dat_main_sses),
     nrow(dat_main_cerq_adaptive),
     nrow(dat_main_cerq_maladaptive),
@@ -690,6 +756,7 @@ sample_n <- tibble(
   n_ids = c(
     n_distinct(dat_main_final$fastress_id),
     n_distinct(dat_main_srs$fastress_id),
+    n_distinct(dat_main_mri$fastress_id),
     n_distinct(dat_main_sses$fastress_id),
     n_distinct(dat_main_cerq_adaptive$fastress_id),
     n_distinct(dat_main_cerq_maladaptive$fastress_id),
@@ -713,6 +780,7 @@ sample_flow_analysis <- tibble(
     "dat_main",
     "dat_main_final",
     "dat_main_srs",
+    "dat_main_mri",
     "dat_main_sses",
     "dat_main_cerq_adaptive",
     "dat_main_cerq_maladaptive",
@@ -725,6 +793,7 @@ sample_flow_analysis <- tibble(
     nrow(dat_main),
     nrow(dat_main_final),
     nrow(dat_main_srs),
+    nrow(dat_main_mri),
     nrow(dat_main_sses),
     nrow(dat_main_cerq_adaptive),
     nrow(dat_main_cerq_maladaptive),
@@ -737,6 +806,7 @@ sample_flow_analysis <- tibble(
     n_distinct(dat_main$fastress_id),
     n_distinct(dat_main_final$fastress_id),
     n_distinct(dat_main_srs$fastress_id),
+    n_distinct(dat_main_mri$fastress_id),
     n_distinct(dat_main_sses$fastress_id),
     n_distinct(dat_main_cerq_adaptive$fastress_id),
     n_distinct(dat_main_cerq_maladaptive$fastress_id),
@@ -1008,6 +1078,12 @@ model_summary_pack <- function(m0, m1, dat, outcome) {
 # results_main[["prop_high_kcal"]] <- list(m0 = m0_prop, m1 = m1_prop)
 
 
+
+```
+
+### Summary across all outcomes
+
+```{r}
 # ============================================================
 # Hauptanalyse: Condition Effekt für alle Outcomes
 # kompakte Übersichtstabelle
@@ -1113,6 +1189,12 @@ In the fasted condition, it is estimated that approximately 2 kcal more were con
 # summary(m_period1)
 # confint(m_period1, method = "Wald")
 
+
+```
+
+### Fixed effects including session
+
+```{r}
 # ============================================================
 # Session effect: kompakte Ergebnistabelle
 # ============================================================
@@ -1157,7 +1239,7 @@ tbl_period |>
 
 ```
 
-Modellvergleich:
+### Model comparison for adding session
 
 ```{r}
 # Modellvergleich 
@@ -1239,6 +1321,8 @@ m_srs_add = main effect of Condition plus main effect of Moderator
 
 m_srs_int = plus interaction; ANOVA tests whether the interaction provides additional explanatory power
 
+#### Sample check
+
 ```{r}
 # ------------------------------------------------------------
 # Moderation 1: SRS (srs_c)
@@ -1254,12 +1338,24 @@ srs_res <- fit_moderation(
 )
 
 srs_res$qc |> flextable()
+
+
+```
+
+#### Model comparison
+
+```{r}
 as.data.frame(srs_res$anova) |> flextable()
-model_fixed_table(srs_res$int)
 
 ```
 
 m_srs_add -\> The interaction model does not fit significantly better than the additive model. (p \> .518
+
+#### Interaction model estimates
+
+```{r}
+model_fixed_table(srs_res$int)
+```
 
 Intercept -\> A person with an average SRS is estimated to consume approximately 372.6 kcal when satiated.
 
@@ -1269,7 +1365,30 @@ planned_conditionfasted = 2.028 -\> With average stress reactivity, it was estim
 
 **H2b:** planned_conditionfasted:srs_c -\> For every additional unit of SRS, the difference between the fasted and satiated states is estimated to be 48.45 kcal lower. This does not suggest a stronger positive correlation in the fasted state
 
+#### Addition Analysis: MRI subjective stress reactivity
+
+```{r}
+# ------------------------------------------------------------
+# MRI-based subjective stress reactivity (mri_reactivity_c)
+# Outcome: total_kcal
+# Sample: dat_main_mri
+# Additional analysis
+# ------------------------------------------------------------
+
+mri_res <- fit_moderation(
+  dat = dat_main_mri,
+  outcome = "total_kcal",
+  moderator = "mri_reactivity_c"
+)
+
+mri_res$qc |> flextable()
+as.data.frame(mri_res$anova) |> flextable()
+model_fixed_table(mri_res$int)
+```
+
 ### Moderation 2: CERQ
+
+#### Adaptive CERQ
 
 ```{r}
 # ------------------------------------------------------------
@@ -1287,9 +1406,29 @@ cerq_adapt_res <- fit_moderation(
 )
 
 cerq_adapt_res$qc |> flextable()
+
+```
+
+#### Model comparison
+
+```{r}
 as.data.frame(cerq_adapt_res$anova) |> flextable()
+
+```
+
+m_cerq_adapt_add -\> There is no evidence that adaptive CERQ moderates the condition effect. p = .523
+
+#### Interaction model estimates
+
+```{r}
 model_fixed_table(cerq_adapt_res$int)
 
+
+```
+
+#### Maladaptive CERQ
+
+```{r}
 
 # CERQ maladaptive
 cerq_mal_res <- fit_moderation(
@@ -1299,19 +1438,30 @@ cerq_mal_res <- fit_moderation(
 )
 
 cerq_mal_res$qc |> flextable()
-as.data.frame(cerq_mal_res$anova) |> flextable()
-model_fixed_table(cerq_mal_res$int)
-
 
 ```
 
-m_cerq_adapt_add -\> There is no evidence that adaptive CERQ moderates the condition effect. p = .523
+#### Model comparison
+
+```{r}
+as.data.frame(cerq_mal_res$anova) |> flextable()
+
+```
+
+#### Interaction model estimates
+
+```{r}
+model_fixed_table(cerq_mal_res$int)
+
+```
 
 H3a was not supported: there was no evidence that adaptive cognitive emotion regulation moderated the association between metabolic condition and total caloric intake. -\> direction was even positive
 
 H3b was not supported: maladaptive cognitive emotion regulation was not significantly associated with greater caloric intake, and no significant interaction with metabolic condition was observed. -\> direction was even negative
 
 ### Moderation 3: STADI Trait Anxiety
+
+#### Total caloric intake
 
 ```{r}
 # ------------------------------------------------------------
@@ -1328,9 +1478,27 @@ stadit_res <- fit_moderation(
 )
 
 stadit_res$qc |> flextable()
-as.data.frame(stadit_res$anova) |> flextable()
-model_fixed_table(stadit_res$int)
 
+```
+
+#### Model comparison
+
+```{r}
+as.data.frame(stadit_res$anova) |> flextable()
+
+```
+
+m_stadit_add -\> The interaction model does not fit significantly better than the additive model. = There is no evidence that trait anxiety moderates the effect of metabolic condition on total_kcal.
+
+#### Interaction model estimates
+
+```{r}
+model_fixed_table(stadit_res$int)
+```
+
+#### High-calorie intake
+
+```{r}
 # high_kcal
 stadit_high_res <- fit_moderation(
   dat = dat_main_stadit,
@@ -1338,18 +1506,29 @@ stadit_high_res <- fit_moderation(
   moderator = "stadit_c"
 )
 
-as.data.frame(stadit_high_res$anova) |> flextable()
-model_fixed_table(stadit_high_res$int)
 
 ```
 
-m_stadit_add -\> The interaction model does not fit significantly better than the additive model. = There is no evidence that trait anxiety moderates the effect of metabolic condition on total_kcal.
+#### Model comparison
+
+```{r}
+as.data.frame(stadit_high_res$anova) |> flextable()
+```
+
+#### Interaction model estimates
+
+```{r}
+model_fixed_table(stadit_high_res$int)
+
+```
 
 **H4a was not supported:** trait anxiety was not significantly associated with total caloric intake or high-calorie intake.
 
 **H4b was not supported:** there was no evidence that trait anxiety moderated the effect of metabolic condition on either total caloric intake or high-calorie intake.
 
 ### Moderation 4: EDEQ & SSES
+
+### EDE-Q restraint
 
 ```{r}
 # ------------------------------------------------------------
@@ -1366,13 +1545,23 @@ edeq_res <- fit_moderation(
 )
 
 edeq_res$qc |> flextable()
-as.data.frame(edeq_res$anova) |> flextable()
-model_fixed_table(edeq_res$int)
-
 
 ```
 
-## Moderation 4: SSES
+#### Model comparison
+
+```{r}
+as.data.frame(edeq_res$anova) |> flextable()
+```
+
+#### Interaction model estimates
+
+```{r}
+model_fixed_table(edeq_res$int)
+
+```
+
+### SSES
 
 ```{r}
 # ------------------------------------------------------------
@@ -1388,11 +1577,22 @@ sses_res <- fit_moderation(
 )
 
 sses_res$qc |> flextable()
+
+```
+
+#### Model comparison
+
+```{r}
 as.data.frame(sses_res$anova) |> flextable()
-model_fixed_table(sses_res$int)
 ```
 
 m_edeq_add -\> The interaction model does not fit significantly better than the additive model = There is no evidence that restrained eating moderates the effect of metabolic condition on total_kcal.
+
+#### Interaction model estimates
+
+```{r}
+model_fixed_table(sses_res$int)
+```
 
 H5 was not supported for restrained eating: EDE-Q restraint was neither significantly associated with total caloric intake nor did it significantly moderate the effect of metabolic condition.\
 -\> but: With increasing restraint in eating, the difference between fasted and satiated states becomes slightly more positive in numerical terms.
@@ -1408,6 +1608,7 @@ H5 was also not supported for stress eating tendencies: SSES showed neither a si
 
 results_mod_total <- list(
   srs = list(add = srs_res$add, int = srs_res$int),
+  mri = list(add = mri_res$add, int = mri_res$int),
   sses = list(add = sses_res$add, int = sses_res$int),
   cerq_adapt = list(add = cerq_adapt_res$add, int = cerq_adapt_res$int),
   cerq_mal   = list(add = cerq_mal_res$add, int = cerq_mal_res$int),
@@ -1419,15 +1620,18 @@ results_mod_total <- list(
 
 ## Moderation summary
 
+This table summarises whether the interaction model improved model fit over the additive model for each moderator.
+
 ```{r}
 # ============================================================
 # Tabelle: Moderations Test (add vs int) für total_kcal
 # ============================================================
 
 mod_tests_total <- tibble(
-  moderator = c("srs", "sses", "cerq_adapt", "cerq_mal", "stadit", "edeq"),
+  moderator = c("srs", "mri", "sses", "cerq_adapt", "cerq_mal", "stadit", "edeq"),
   p_int = c(
     srs_res$anova$`Pr(>Chisq)`[2],
+    mri_res$anova$`Pr(>Chisq)`[2],
     sses_res$anova$`Pr(>Chisq)`[2],
     cerq_adapt_res$anova$`Pr(>Chisq)`[2],
     cerq_mal_res$anova$`Pr(>Chisq)`[2],
@@ -1534,6 +1738,10 @@ The null effect remained unchanged when total caloric intake was log-transformed
 
 ## Outlier check
 
+### Sample trimming rule
+
+Extreme observations were defined as sessions above the 99th percentile of total caloric intake.
+
 ```{r}
 # ============================================================
 # Sensitivität: Ausreisser nach 99 Prozent Quantil
@@ -1552,11 +1760,26 @@ dat_main_no_out <- dat_main_trim |>
 mods_full <- fit_main_effect(dat = dat_main_trim, outcome = "total_kcal", use_random_slope = use_random_slope)
 mods_trim <- fit_main_effect(dat = dat_main_no_out, outcome = "total_kcal", use_random_slope = use_random_slope)
 
-cat("\nMit Ausreissern:\n")
-print(model_summary_pack(mods_full$m0, mods_full$m1, dat_main_trim, "total_kcal")$fixed)
 
-cat("\nOhne Ausreisser 99 Prozent Regel:\n")
-print(model_summary_pack(mods_trim$m0, mods_trim$m1, dat_main_no_out, "total_kcal")$fixed)
+```
+
+### Primary model including all observations
+
+```{r}
+
+model_summary_pack(mods_full$m0, mods_full$m1, dat_main_trim, "total_kcal")$fixed |>
+  as.data.frame() |>
+  flextable()
+
+
+```
+
+### Primary model after excluding extreme observations
+
+```{r}
+model_summary_pack(mods_trim$m0, mods_trim$m1, dat_main_no_out, "total_kcal")$fixed |>
+  as.data.frame() |>
+  flextable()
 
 ```
 
@@ -1570,6 +1793,8 @@ The null effect of metabolic condition persisted after excluding extreme high-in
 
 ## Plots
 
+### Spaghetti plot for total caloric intake
+
 ```{r}
 # ============================================================
 # Plots: within subject Spaghetti Plot für total_kcal
@@ -1582,7 +1807,12 @@ dat_main_final |>
   labs(title = "total_kcal pro Person nach Condition", x = "Condition", y = "total_kcal")
 
 
-# Interaktions Plot ohne Zusatzpakete, simpel ueber Vorhersagen aus dem Modell:
+
+```
+
+### Example interaction plot for SRS
+
+```{r}
 # ============================================================
 # Plots: Interaktion planned_condition mal srs_c als Beispiel
 # ============================================================
@@ -1621,6 +1851,8 @@ pred_grid |>
 
 ## Diagnostics
 
+### Residual diagnostics
+
 ```{r}
 # ============================================================
 # Modellannahmen und Diagnostics für total_kcal (Hauptmodell)
@@ -1634,6 +1866,13 @@ plot(m_total, which = 1)
 # QQ Plot der Residuen
 qqnorm(resid(m_total))
 qqline(resid(m_total))
+
+
+```
+
+### Sessions with the largest residuals
+
+```{r}
 
 diag_df <- dat_main_final |>
   mutate(
@@ -1661,15 +1900,40 @@ m0_total <- results_main[["total_kcal"]]$m0
 
 # Modellvergleich (Likelihood Ratio Test)
 m1_total <- results_main[["total_kcal"]]$m1
+
+
+```
+
+### Model comparison
+
+```{r}
+
 anova(m0_total, m1_total)
 
-# Prozent CI fuer Fixed Effects
+```
+
+### Confidence intervals
+
+```{r}
+# Prozent CI für Fixed Effects
 confint(m1_total, method = "Wald")
 
+
+```
+
+### Fixed effects of the primary model
+
+```{r}
 # Fixed Effects Tabelle kompakt
 summary(m1_total)
 
 model_fixed_table(m1_total)
+
+```
+
+### Standardised effect size
+
+```{r}
 
 # Effektgrösse: Condition Effekt in SD Einheiten (bezogen auf dat_main)
 sd_total <- dat_main_final |>
