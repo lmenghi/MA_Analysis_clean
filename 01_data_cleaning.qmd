@@ -94,35 +94,34 @@ ggplot2::theme_set(theme_main)
 # Read raw data from data_raw folder
 # --------------------------------------------------
 
-food_t1 <- read_csv(
-  "data_raw/FASTRESS_measures-food(session T1).csv",
-  show_col_types = FALSE,
-  col_types = cols(.default = col_character())
+food_t1 <- read_xlsx(
+  "data_raw/FASTRESS_measures-food.xlsx",
+  sheet = "session T1",
+  col_types = "text"
 ) |>
   clean_names() |>
   mutate(session = "T1")
 
-
-food_t2 <- read_csv(
-  "data_raw/FASTRESS_measures-food(session T2).csv",
-   show_col_types = FALSE,
-  col_types = cols(.default = col_character())
+food_t2 <- read_xlsx(
+  "data_raw/FASTRESS_measures-food.xlsx",
+  sheet = "session T2",
+  col_types = "text"
 ) |>
   clean_names() |>
   mutate(session = "T2")
 
-stress_t1 <- read_csv(
-  "data_raw/FASTRESS_measures-stress-mri(session T1).csv",
- show_col_types = FALSE,
-  col_types = cols(.default = col_character())
+stress_t1 <- read_xlsx(
+  "data_raw/FASTRESS_measures-stress-mri.xlsx",
+  sheet = "session T1",
+  col_types = "text"
 ) |>
   clean_names() |>
   mutate(session = "T1")
 
-stress_t2 <- read_csv(
-  "data_raw/FASTRESS_measures-stress-mri(session T2).csv",
-  show_col_types = FALSE,
-  col_types = cols(.default = col_character())
+stress_t2 <- read_xlsx(
+  "data_raw/FASTRESS_measures-stress-mri.xlsx",
+  sheet = "session T2",
+  col_types = "text"
 ) |>
   clean_names() |>
   mutate(session = "T2")
@@ -563,17 +562,17 @@ In addition to food intake and stress ratings, questionnaire data and blood samp
 ## Blood import
 
 ```{r}
-
 # --------------------------------------------------
 # Import anthropo + blood sampling data (T1/T2)
 # --------------------------------------------------
+
 # function: clean blood data
-clean_blood <- function(df, session) {
-  df |>
-    read_csv(
-      show_col_types = FALSE,
-      col_types = cols(.default = col_character())
-    ) |>
+clean_blood <- function(path, sheet, session) {
+  read_xlsx(
+    path,
+    sheet = sheet,
+    col_types = "text"
+  ) |>
     clean_names() |>
     mutate(
       session = session,
@@ -593,13 +592,15 @@ clean_blood <- function(df, session) {
 list.files("data_raw")
 
 blood_t1 <- clean_blood(
-  "data_raw/FASTRESS_measures-anthropo-blood(session T1).csv",
-  "T1"
+  path = "data_raw/FASTRESS_measures-anthropo-blood.xlsx",
+  sheet = "session T1",
+  session = "T1"
 )
 
 blood_t2 <- clean_blood(
-  "data_raw/FASTRESS_measures-anthropo-blood(session T2).csv",
-  "T2"
+  path = "data_raw/FASTRESS_measures-anthropo-blood.xlsx",
+  sheet = "session T2",
+  session = "T2"
 )
 
 # Quick QC
@@ -622,7 +623,6 @@ blood_all |>
   count(fastress_id, session) |>
   filter(n > 1)
 
-
 # QC: Blood marker types
 # Erwartung numeric
 blood_all |>
@@ -632,8 +632,6 @@ blood_all |>
     age_type = paste(class(age), collapse = ","),
     bmi_type = paste(class(bmi_automatic_should_be_18_5_25), collapse = ",")
   )
-
-
 ```
 
 ## Define metabolic condition
@@ -1053,11 +1051,7 @@ survey_t2 |>
 
 ```
 
-sub-002 appears twice -\> both are T1 -\> keep the first one filled out // you did verify this, right? Yes
-
-Keep exactly one row per person and session -\> the first one filled out. The second (incorrectly filled out T1) is discarded.
-
-The rule is now: If a questionnaire was filled out multiple times within the same session, the first version filled out was retained.
+sub-002 appears twice -\> both are T1 -\> keep the first one filled out
 
 sub-004 filled out survey T2 twice -\> we keep the one from 10.03. as this was her second session.
 
