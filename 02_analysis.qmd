@@ -37,6 +37,7 @@ library(tidyr)
 library(stringr)
 library(tibble)
 library(ggplot2)
+library(rstatix)
 library(lme4)
 library(lmerTest)
 library(readr)
@@ -79,7 +80,105 @@ model_fixed_table <- function(model, digits = 3) {
     autofit()
 }
 
+#rstatistix functions
 
+paired_check <- function(data, col1, col2, label) {
+  
+  pair_df <- data |>
+    transmute(
+      a = {{ col1 }},
+      b = {{ col2 }}
+    ) |>
+    tidyr::drop_na()
+  
+  diff_res <- pair_df |>
+    transmute(diff = a - b) |>
+    rstatix::shapiro_test(diff) |>
+    mutate(
+      comparison = label,
+      method = "Shapiro-Wilk test of difference score"
+    )
+  
+  long_df <- pair_df |>
+    mutate(pair_id = row_number()) |>
+    pivot_longer(
+      cols = c(a, b),
+      names_to = "condition",
+      values_to = "value"
+    )
+  
+  t_res <- long_df |>
+    rstatix::t_test(value ~ condition, paired = TRUE) |>
+    mutate(
+      comparison = label,
+      method = "Paired t-test"
+    )
+  
+  w_res <- long_df |>
+    rstatix::wilcox_test(value ~ condition, paired = TRUE, exact = FALSE) |>
+    mutate(
+      comparison = label,
+      method = "Wilcoxon signed-rank test"
+    )
+  
+  d_res <- long_df |>
+    rstatix::cohens_d(value ~ condition, paired = TRUE) |>
+    mutate(
+      comparison = label,
+      method = "Cohen's d"
+    )
+  
+  summary_res <- tibble(
+    comparison = label,
+    n_pairs = nrow(pair_df),
+    shapiro_p = diff_res$p,
+    preferred_test = ifelse(diff_res$p > .05, "paired t-test", "wilcoxon signed-rank test")
+  )
+  
+  list(
+    summary = summary_res,
+    normality = diff_res,
+    t_test = t_res,
+    wilcox = w_res,
+    effect_size = d_res
+  )
+}
+
+fmt_p <- function(p) {
+  ifelse(
+    is.na(p), NA_character_,
+    ifelse(p < .001, "< .001", sprintf("%.3f", p))
+  )
+}
+
+paired_result_row <- function(res) {
+  
+  use_t <- res$summary$preferred_test[1] == "paired t-test"
+  
+  if (use_t) {
+    stat_label <- "t"
+    stat_value <- round(res$t_test$statistic[1], 2)
+    df_value   <- round(res$t_test$df[1], 2)
+    p_value    <- res$t_test$p[1]
+  } else {
+    stat_label <- "V"
+    stat_value <- round(res$wilcox$statistic[1], 2)
+    df_value   <- NA_real_
+    p_value    <- res$wilcox$p[1]
+  }
+  
+  tibble(
+    comparison    = res$summary$comparison[1],
+    n_pairs       = res$summary$n_pairs[1],
+    shapiro_p     = fmt_p(res$summary$shapiro_p[1]),
+    reported_test = res$summary$preferred_test[1],
+    statistic     = paste0(stat_label, " = ", stat_value),
+    df            = ifelse(is.na(df_value), "", as.character(df_value)),
+    p             = fmt_p(p_value),
+    cohen_d       = round(res$effect_size$effsize[1], 2),
+    magnitude     = res$effect_size$magnitude[1]
+  )
+}
 ```
 
 ## Import checks
@@ -411,31 +510,6 @@ demo_analysis |>
 
 # Assumptions
 
-## Paired comparisons
-
-```{r}
-# ============================================================
-# Helper function: Voraussetzungen gepaarter t Tests
-# ============================================================
-
-check_paired_t <- function(x, y, label = "difference") {
-  d <- x - y
-  d <- d[!is.na(d)]
-
-  cat("\n-----------------------------\n")
-  cat("Check:", label, "\n")
-  cat("-----------------------------\n")
-
-  print(summary(d))
-  cat("\nShapiro Wilk Test:\n")
-  print(shapiro.test(d))
-
-  boxplot(d, main = paste("Differenzwerte:", label))
-  qqnorm(d, main = paste("QQ Plot:", label))
-  qqline(d)
-}
-```
-
 # Manipulation checks
 
 ## Stress ratings
@@ -486,65 +560,55 @@ stress_check_session |>
   )|>
   flextable()
 
-# Assumption checks
-check_paired_t(
-  stress_check_session$mild_mean,
-  stress_check_session$baseline_mean,
-  "Stress mild - baseline"
+```
+
+```{r}
+#| include: false
+
+stress_mild_baseline <- paired_check(
+  data = stress_check_session,
+  col1 = mild_mean,
+  col2 = baseline_mean,
+  label = "Stress mild - baseline"
 )
 
-check_paired_t(
-  stress_check_session$strong_mean,
-  stress_check_session$baseline_mean,
-  "Stress strong - baseline"
+stress_strong_baseline <- paired_check(
+  data = stress_check_session,
+  col1 = strong_mean,
+  col2 = baseline_mean,
+  label = "Stress strong - baseline"
 )
 
-check_paired_t(
-  stress_check_session$strong_mean,
-  stress_check_session$mild_mean,
-  "Stress strong - mild"
+stress_strong_mild <- paired_check(
+  data = stress_check_session,
+  col1 = strong_mean,
+  col2 = mild_mean,
+  label = "Stress strong - mild"
 )
+```
 
-# Paired t-tests
-t.test(
-  stress_check_session$mild_mean,
-  stress_check_session$baseline_mean,
-  paired = TRUE
-)
+### Stress paired test summary
 
-t.test(
-  stress_check_session$strong_mean,
-  stress_check_session$baseline_mean,
-  paired = TRUE
-)
-
-t.test(
-  stress_check_session$strong_mean,
-  stress_check_session$mild_mean,
-  paired = TRUE
-)
-
-# Wilcoxon signed-rank tests as robustness checks
-wilcox.test(
-  stress_check_session$mild_mean,
-  stress_check_session$baseline_mean,
-  paired = TRUE,
-  exact = FALSE
-)
-
-wilcox.test(
-  stress_check_session$strong_mean,
-  stress_check_session$baseline_mean,
-  paired = TRUE,
-  exact = FALSE
-)
-
-wilcox.test(
-  stress_check_session$strong_mean,
-  stress_check_session$mild_mean,
-  paired = TRUE,
-  exact = FALSE
-)
+```{r}
+bind_rows(
+  paired_result_row(stress_mild_baseline),
+  paired_result_row(stress_strong_baseline),
+  paired_result_row(stress_strong_mild)
+) |>
+  rename(
+    Comparison = comparison,
+    `N pairs` = n_pairs,
+    `Shapiro p` = shapiro_p,
+    `Reported test` = reported_test,
+    Statistic = statistic,
+    df = df,
+    p = p,
+    `Cohen's d` = cohen_d,
+    Magnitude = magnitude
+  ) |>
+  flextable() |>
+  theme_booktabs() |>
+  autofit()
 ```
 
 According to the Shapiro–Wilk test, the difference values for "mild" vs. "baseline" and "strong" vs. "baseline" did not differ significantly from a normal distribution (p = .124 and p = .082).
@@ -583,14 +647,47 @@ blood_wide <- blood_wide |>
 across(starts_with("glucose_pre"), parse_num)
   )
 
-# Voraussetzungen prüfen
-check_paired_t(blood_wide$ketones_pre_fasted, blood_wide$ketones_pre_satiated, "Ketones fasted - satiated")
-check_paired_t(blood_wide$glucose_pre_fasted, blood_wide$glucose_pre_satiated, "Glucose fasted - satiated")
+```
 
-# Paired t tests
-t.test(blood_wide$ketones_pre_fasted, blood_wide$ketones_pre_satiated, paired = TRUE)
-t.test(blood_wide$glucose_pre_fasted, blood_wide$glucose_pre_satiated, paired = TRUE)
+```{r}
+#| include: false
 
+ketones_check <- paired_check(
+  data = blood_wide,
+  col1 = ketones_pre_fasted,
+  col2 = ketones_pre_satiated,
+  label = "Ketones fasted - satiated"
+)
+
+glucose_check <- paired_check(
+  data = blood_wide,
+  col1 = glucose_pre_fasted,
+  col2 = glucose_pre_satiated,
+  label = "Glucose fasted - satiated"
+)
+```
+
+### Blood marker paired test summary
+
+```{r}
+bind_rows(
+  paired_result_row(ketones_check),
+  paired_result_row(glucose_check)
+) |>
+  rename(
+    Comparison = comparison,
+    `N pairs` = n_pairs,
+    `Shapiro p` = shapiro_p,
+    `Reported test` = reported_test,
+    Statistic = statistic,
+    df = df,
+    p = p,
+    `Cohen's d` = cohen_d,
+    Magnitude = magnitude
+  ) |>
+  flextable() |>
+  theme_booktabs() |>
+  autofit()
 ```
 
 The metabolic state was more clearly evident in the blood for glucose than for ketones. Although ketone levels were in line with expectations, the evidence is not sufficient in this case. Glucose levels, on the other hand, differed significantly between the conditions.
@@ -635,21 +732,37 @@ hunger_wide |>
   )|>
   flextable()
 
-# Voraussetzungen prüfen
-check_paired_t(hunger_wide$fasted, hunger_wide$satiated, "Hunger fasted - satiated")
+```
 
-# Paired t test
-t.test(hunger_wide$fasted, hunger_wide$satiated, paired = TRUE)
+```{r}
+#| include: false
 
-# Wilcoxon signed-rank test
-wilcox.test(
-  hunger_wide$fasted,
-  hunger_wide$satiated,
-  paired = TRUE,
-  exact = FALSE
+hunger_check <- paired_check(
+  data = hunger_wide,
+  col1 = fasted,
+  col2 = satiated,
+  label = "Hunger fasted - satiated"
 )
+```
 
+### Hunger paired test summary
 
+```{r}
+paired_result_row(hunger_check) |>
+  rename(
+    Comparison = comparison,
+    `N pairs` = n_pairs,
+    `Shapiro p` = shapiro_p,
+    `Reported test` = reported_test,
+    Statistic = statistic,
+    df = df,
+    p = p,
+    `Cohen's d` = cohen_d,
+    Magnitude = magnitude
+  ) |>
+  flextable() |>
+  theme_booktabs() |>
+  autofit()
 ```
 
 Shapiro–Wilk p = **.0263**. -\> distribution was not met -\> Wilcoxon: V = 167, p \< .001
