@@ -44,6 +44,7 @@ library(readr)
 library(flextable)  # tables output
 library(gtsummary)  # tables
 library(broom.mixed)
+library(report)
 
 analysis_session <- readRDS("data_clean/analysis_session.rds")
 analysis_session_sample <- readRDS("data_clean/analysis_session_sample.rds")
@@ -178,6 +179,41 @@ paired_result_row <- function(res) {
     cohen_d       = round(res$effect_size$effsize[1], 2),
     magnitude     = res$effect_size$magnitude[1]
   )
+}
+```
+
+```{r}
+#| echo: false
+#| warning: false
+# ============================================================
+# Plot helpers
+# ============================================================
+
+plot_theme <- theme_classic(base_size = 16) +
+  theme(
+    legend.position = "bottom",
+    strip.background = element_blank(),
+    strip.text = element_text(face = "bold"),
+    axis.title = element_text(face = "bold")
+  )
+
+cond_labels <- c(
+  "satiated" = "Satiated",
+  "fasted"   = "Fasted"
+)
+
+mean_ci_tbl <- function(data, outcome) {
+  data |>
+    group_by(planned_condition) |>
+    summarise(
+      mean = mean(.data[[outcome]], na.rm = TRUE),
+      sd = sd(.data[[outcome]], na.rm = TRUE),
+      n = sum(!is.na(.data[[outcome]])),
+      se = sd / sqrt(n),
+      ci_low = mean - 1.96 * se,
+      ci_high = mean + 1.96 * se,
+      .groups = "drop"
+    )
 }
 ```
 
@@ -611,6 +647,88 @@ bind_rows(
   autofit()
 ```
 
+```{r}
+# ============================================================
+# Figure: Stress manipulation check
+# ============================================================
+
+stress_plot_df <- stress_check_session |>
+  mutate(session_id = paste(fastress_id, session, sep = "_")) |>
+  select(session_id, baseline_mean, mild_mean, strong_mean) |>
+  pivot_longer(
+    cols = c(baseline_mean, mild_mean, strong_mean),
+    names_to = "phase",
+    values_to = "stress_rating"
+  ) |>
+  mutate(
+    phase = factor(
+      phase,
+      levels = c("baseline_mean", "mild_mean", "strong_mean"),
+      labels = c("Baseline", "Mild stress", "Strong stress")
+    )
+  )
+
+stress_sum <- stress_plot_df |>
+  group_by(phase) |>
+  summarise(
+    mean = mean(stress_rating, na.rm = TRUE),
+    sd = sd(stress_rating, na.rm = TRUE),
+    n = sum(!is.na(stress_rating)),
+    se = sd / sqrt(n),
+    ci_low = mean - 1.96 * se,
+    ci_high = mean + 1.96 * se,
+    .groups = "drop"
+  )
+
+p_stress_check <- ggplot(
+  stress_plot_df,
+  aes(x = phase, y = stress_rating, group = session_id)
+) +
+  geom_line(alpha = 0.18) +
+  geom_point(alpha = 0.25, size = 1.5) +
+  geom_line(
+    data = stress_sum,
+    aes(x = phase, y = mean, group = 1),
+    linewidth = 1.2,
+    inherit.aes = FALSE
+  ) +
+  geom_point(
+    data = stress_sum,
+    aes(x = phase, y = mean),
+    size = 3.5,
+    inherit.aes = FALSE
+  ) +
+  geom_errorbar(
+    data = stress_sum,
+    aes(x = phase, ymin = ci_low, ymax = ci_high),
+    width = 0.08,
+    linewidth = 0.8,
+    inherit.aes = FALSE
+  ) +
+  labs(
+    title = "Subjective stress ratings across stress phases",
+    x = "Stress phase",
+    y = "Stress rating"
+  ) +
+  plot_theme
+
+p_stress_check
+```
+
+```{r}
+
+stress_plot_df |>
+  ggplot(aes(x = phase, y = stress_rating)) +
+  geom_boxplot(width = 0.5, outlier.shape = NA) +
+  geom_jitter(width = 0.08, alpha = 0.35) +
+  labs(
+    title = "Stress ratings across stress phases",
+    x = "Stress phase",
+    y = "Stress rating"
+  ) +
+  theme_main
+```
+
 According to the Shapiro–Wilk test, the difference values for "mild" vs. "baseline" and "strong" vs. "baseline" did not differ significantly from a normal distribution (p = .124 and p = .082).
 
 For "strong" vs. "mild" the distribution was not met (p = .0167 -\> significant). -\> The corresponding Wilcoxon test was also highly significant.
@@ -766,6 +884,93 @@ paired_result_row(hunger_check) |>
 ```
 
 Shapiro–Wilk p = **.0263**. -\> distribution was not met -\> Wilcoxon: V = 167, p \< .001
+
+```{r}
+# ============================================================
+# Figure: Manipulation checks for hunger and blood markers
+# ============================================================
+
+manip_plot_df <- bind_rows(
+  blood_wide |>
+    transmute(
+      fastress_id,
+      measure = "Ketones",
+      satiated = ketones_pre_satiated,
+      fasted = ketones_pre_fasted
+    ),
+  blood_wide |>
+    transmute(
+      fastress_id,
+      measure = "Glucose",
+      satiated = glucose_pre_satiated,
+      fasted = glucose_pre_fasted
+    ),
+  hunger_wide |>
+    transmute(
+      fastress_id,
+      measure = "Hunger",
+      satiated = satiated,
+      fasted = fasted
+    )
+) |>
+  pivot_longer(
+    cols = c(satiated, fasted),
+    names_to = "planned_condition",
+    values_to = "value"
+  ) |>
+  filter(!is.na(value)) |>
+  mutate(
+    measure = factor(measure, levels = c("Hunger", "Glucose", "Ketones"))
+  )
+
+manip_sum <- manip_plot_df |>
+  group_by(measure, planned_condition) |>
+  summarise(
+    mean = mean(value, na.rm = TRUE),
+    sd = sd(value, na.rm = TRUE),
+    n = sum(!is.na(value)),
+    se = sd / sqrt(n),
+    ci_low = mean - 1.96 * se,
+    ci_high = mean + 1.96 * se,
+    .groups = "drop"
+  )
+
+p_manip_checks <- ggplot(
+  manip_plot_df,
+  aes(x = planned_condition, y = value, group = fastress_id)
+) +
+  geom_line(alpha = 0.25) +
+  geom_point(alpha = 0.45, size = 1.8) +
+  geom_line(
+    data = manip_sum,
+    aes(x = planned_condition, y = mean, group = 1),
+    linewidth = 1.1,
+    inherit.aes = FALSE
+  ) +
+  geom_point(
+    data = manip_sum,
+    aes(x = planned_condition, y = mean),
+    size = 3.2,
+    inherit.aes = FALSE
+  ) +
+  geom_errorbar(
+    data = manip_sum,
+    aes(x = planned_condition, ymin = ci_low, ymax = ci_high),
+    width = 0.08,
+    linewidth = 0.8,
+    inherit.aes = FALSE
+  ) +
+  facet_wrap(~ measure, scales = "free_y") +
+  scale_x_discrete(labels = cond_labels) +
+  labs(
+    title = "Manipulation checks across metabolic conditions",
+    x = "Metabolic condition",
+    y = "Observed value"
+  ) +
+  plot_theme
+
+p_manip_checks
+```
 
 # Subjective stress reactivity (during MRI)
 
@@ -980,8 +1185,23 @@ dat_main_final |>
 dat_main_final |>
   ggplot(aes(x = planned_condition, y = total_kcal)) +
   geom_boxplot() +
-  labs(title = "total_kcal Boxplot nach Condition")
-
+  stat_summary(
+    fun = mean,
+    geom = "point",
+    size = 3
+  ) +
+  stat_summary(
+    fun = mean,
+    geom = "crossbar",
+    width = 0.4,
+    linewidth = 0.5
+  ) +
+  labs(
+    title = "Total kcal by metabolic condition",
+    x = "Metabolic condition",
+    y = "Total kcal"
+  ) +
+  theme_main
 ```
 
 ## Descriptives
@@ -1273,6 +1493,59 @@ tbl_main_results |>
   flextable() |>
   theme_booktabs() |>
   autofit()
+```
+
+```{r}
+# ============================================================
+# Figure: Forest plot for main effects
+# ============================================================
+
+extract_condition_effect <- function(model, outcome_label) {
+  coef_df <- as.data.frame(summary(model)$coefficients) |>
+    tibble::rownames_to_column("term")
+
+  ci_df <- as.data.frame(confint(model, method = "Wald")) |>
+    tibble::rownames_to_column("term")
+
+  coef_df |>
+    filter(term == "planned_conditionfasted") |>
+    left_join(ci_df, by = "term") |>
+    transmute(
+      outcome = outcome_label,
+      estimate = Estimate,
+      conf_low = `2.5 %`,
+      conf_high = `97.5 %`
+    )
+}
+
+forest_main <- bind_rows(
+  extract_condition_effect(results_main[["total_kcal"]]$m1, "Total kcal"),
+  extract_condition_effect(results_main[["high_kcal"]]$m1, "High-kcal foods"),
+  extract_condition_effect(results_main[["low_kcal"]]$m1, "Low-kcal foods"),
+  extract_condition_effect(results_main[["prop_high_kcal"]]$m1, "Proportion high-kcal")
+) |>
+  mutate(
+    outcome = factor(
+      outcome,
+      levels = rev(c("Total kcal", "High-kcal foods", "Low-kcal foods", "Proportion high-kcal"))
+    )
+  )
+
+p_forest_main <- ggplot(forest_main, aes(x = estimate, y = outcome)) +
+  geom_vline(xintercept = 0, linetype = 2) +
+  geom_segment(
+    aes(x = conf_low, xend = conf_high, y = outcome, yend = outcome),
+    linewidth = 0.8
+  ) +
+  geom_point(size = 3) +
+  labs(
+    title = "Estimated effect of fasting across outcomes",
+    x = "Estimate for fasted vs. satiated",
+    y = NULL
+  ) +
+  plot_theme
+
+p_forest_main
 ```
 
 In the fasted condition, it is estimated that approximately 2 kcal more were consumed than in the satiated state -\> practically zero.
@@ -1906,60 +2179,148 @@ The null effect of metabolic condition persisted after excluding extreme high-in
 
 ## Plots
 
-### Spaghetti plot for total caloric intake
+### Main outcome plot (total_kcal)
 
 ```{r}
 # ============================================================
-# Plots: within subject Spaghetti Plot für total_kcal
+# Figure: Main outcome plot (total_kcal)
 # ============================================================
 
-dat_main_final |>
-  ggplot(aes(x = planned_condition, y = total_kcal, group = subject)) +
-  geom_line(alpha = 0.4) +
-  geom_point() +
-  labs(title = "total_kcal pro Person nach Condition", x = "Condition", y = "total_kcal")
+sum_total <- mean_ci_tbl(dat_main_final, "total_kcal")
 
+p_total_main <- ggplot(
+  dat_main_final,
+  aes(x = planned_condition, y = total_kcal, group = fastress_id)
+) +
+  geom_line(alpha = 0.35) +
+  geom_point(size = 2, alpha = 0.7) +
+  geom_line(
+    data = sum_total,
+    aes(x = planned_condition, y = mean, group = 1),
+    linewidth = 1.1,
+    inherit.aes = FALSE
+  ) +
+  geom_point(
+    data = sum_total,
+    aes(x = planned_condition, y = mean),
+    size = 3.5,
+    inherit.aes = FALSE
+  ) +
+  geom_errorbar(
+    data = sum_total,
+    aes(x = planned_condition, ymin = ci_low, ymax = ci_high),
+    width = 0.08,
+    linewidth = 0.8,
+    inherit.aes = FALSE
+  ) +
+  scale_x_discrete(labels = cond_labels) +
+  labs(
+    title = "Total caloric intake by metabolic condition",
+    x = "Metabolic condition",
+    y = "Total kcal consumed"
+  ) +
+  plot_theme
 
+p_total_main
 
+```
+
+### Secondary outcomes by condition
+
+```{r}
+# ============================================================
+# Figure: Secondary outcomes by condition
+# ============================================================
+
+secondary_long <- dat_main_final |>
+  select(
+    fastress_id, planned_condition,
+    total_kcal, high_kcal, low_kcal, prop_high_kcal
+  ) |>
+  pivot_longer(
+    cols = c(total_kcal, high_kcal, low_kcal, prop_high_kcal),
+    names_to = "outcome",
+    values_to = "value"
+  ) |>
+  mutate(
+    outcome = factor(
+      outcome,
+      levels = c("total_kcal", "high_kcal", "low_kcal", "prop_high_kcal"),
+      labels = c("Total kcal", "High-kcal foods", "Low-kcal foods", "Proportion high-kcal")
+    )
+  )
+
+secondary_sum <- secondary_long |>
+  group_by(outcome, planned_condition) |>
+  summarise(
+    mean = mean(value, na.rm = TRUE),
+    sd = sd(value, na.rm = TRUE),
+    n = sum(!is.na(value)),
+    se = sd / sqrt(n),
+    ci_low = mean - 1.96 * se,
+    ci_high = mean + 1.96 * se,
+    .groups = "drop"
+  )
+
+p_secondary <- ggplot(
+  secondary_sum,
+  aes(x = planned_condition, y = mean, group = 1)
+) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = ci_low, ymax = ci_high), width = 0.08) +
+  facet_wrap(~ outcome, scales = "free_y") +
+  scale_x_discrete(labels = cond_labels) +
+  labs(
+    title = "Outcomes by metabolic condition",
+    x = "Metabolic condition",
+    y = "Mean outcome"
+  ) +
+  plot_theme
+
+p_secondary
 ```
 
 ### Example interaction plot for SRS
 
 ```{r}
 # ============================================================
-# Plots: Interaktion planned_condition mal srs_c als Beispiel
+# Figure: SRS interaction at three levels
 # ============================================================
 
-m_srs_int <- lmer(
-  total_kcal ~ planned_condition * srs_c + (1 | subject),
-  data = dat_main_srs,
-  REML = FALSE
-)
+srs_sd <- sd(dat_main_srs$srs_c, na.rm = TRUE)
 
-# Grid für Vorhersagen
-srs_seq <- seq(
-  from = quantile(dat_main_srs$srs_c, 0.05, na.rm = TRUE),
-  to   = quantile(dat_main_srs$srs_c, 0.95, na.rm = TRUE),
-  length.out = 50
-)
-
-pred_grid <- expand.grid(
+pred_srs <- expand.grid(
   planned_condition = levels(dat_main_srs$planned_condition),
-  srs_c = srs_seq
-)
-
-pred_grid$pred <- predict(m_srs_int, newdata = pred_grid, re.form = NA)
-
-pred_grid |>
+  srs_c = c(-srs_sd, 0, srs_sd)
+) |>
   as_tibble() |>
-  ggplot(aes(x = srs_c, y = pred, linetype = planned_condition)) +
-  geom_line(linewidth = 1) +
-  labs(
-    title = "Vorhersage total_kcal: Condition mal SRS",
-    x = "srs_c",
-    y = "predicted total_kcal"
+  mutate(
+    srs_level = factor(
+      srs_c,
+      levels = c(-srs_sd, 0, srs_sd),
+      labels = c("Low SRS (-1 SD)", "Mean SRS", "High SRS (+1 SD)")
+    )
   )
 
+pred_srs$pred <- predict(srs_res$int, newdata = pred_srs, re.form = NA)
+
+p_srs_interaction <- ggplot(
+  pred_srs,
+  aes(x = planned_condition, y = pred, group = srs_level, linetype = srs_level)
+) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2.5) +
+  scale_x_discrete(labels = cond_labels) +
+  labs(
+    title = "Predicted total caloric intake by condition and SRS",
+    x = "Metabolic condition",
+    y = "Predicted total kcal",
+    linetype = "SRS level"
+  ) +
+  plot_theme
+
+p_srs_interaction
 ```
 
 ## Diagnostics
@@ -2063,38 +2424,55 @@ beta_cond / sd_total
 ## Save final outputs
 
 ```{r}
-# # --------------------------------------------------
-# # Final sanity checks before export
-# # --------------------------------------------------
-# 
-# stopifnot(exists("dat_main"))
-# stopifnot(exists("results_main"))
-# stopifnot(exists("results_mod_total"))
-# stopifnot(nrow(dat_main) > 0)
-# 
-# 
-# # ============================================================
-# # Export: zentrale Outputs speichern
-# # ============================================================
-# 
-# dir.create("outputs", showWarnings = FALSE)
-# 
-# # Daten
-# saveRDS(analysis_session, "outputs/analysis_session.rds")
-# saveRDS(dat_main, "outputs/dat_main.rds")
-# saveRDS(dat_main_final, "outputs/dat_main_final.rds")
-# write_csv(sample_n, "outputs/sample_n.csv")
-# 
-# # Modelle
-# saveRDS(results_main, "outputs/results_main.rds")
-# saveRDS(results_mod_total, "outputs/results_mod_total.rds")
-# 
-# # Tabellen
-# write_csv(mod_tests_total, "outputs/mod_tests_total.csv")
-# 
-# # Session Info
-# sink("outputs/session_info.txt")
-# sessionInfo()
-# sink()
+# ============================================================
+# Export figures
+# ============================================================
 
+dir.create("figures", showWarnings = FALSE)
+
+ggsave(
+  filename = "figures/figure_stress_check.png",
+  plot = p_stress_check,
+  width = 7, height = 5, dpi = 300, bg = "white"
+)
+
+ggsave(
+  filename = "figures/figure_manip_checks.png",
+  plot = p_manip_checks,
+  width = 9, height = 6, dpi = 300, bg = "white"
+)
+
+ggsave(
+  filename = "figures/figure_total_main.png",
+  plot = p_total_main,
+  width = 7, height = 5, dpi = 300, bg = "white"
+)
+
+ggsave(
+  filename = "figures/figure_forest_main.png",
+  plot = p_forest_main,
+  width = 8, height = 5, dpi = 300, bg = "white"
+)
+
+# optional
+ggsave(
+  filename = "figures/figure_secondary_outcomes.png",
+  plot = p_secondary,
+  width = 9, height = 7, dpi = 300, bg = "white"
+)
+
+# optional
+ggsave(
+  filename = "figures/figure_srs_interaction.png",
+  plot = p_srs_interaction,
+  width = 7, height = 5, dpi = 300, bg = "white"
+)
+
+```
+
+# Package References
+
+```{r}
+
+report::cite_packages(sessionInfo())
 ```
