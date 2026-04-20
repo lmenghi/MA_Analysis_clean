@@ -2426,6 +2426,82 @@ beta_cond / sd_total
 
 ```
 
+# Individual Examples plot
+
+```{r}
+# ============================================================
+# Individual examples plot
+# ============================================================
+
+example_ids <- c("sub-001", "sub-039", "sub-004")
+
+example_labels <- c(
+  "sub-001" = "Participant A",
+  "sub-039" = "Participant B", 
+  "sub-004" = "Participant C"
+)
+
+p_individual <- dat_main_final |>
+  filter(fastress_id %in% example_ids) |>
+  mutate(
+    participant = recode(fastress_id, !!!example_labels),
+    planned_condition = factor(
+      planned_condition, 
+      levels = c("satiated", "fasted"),
+      labels = c("Satiated", "Fasted")
+    )
+  ) |>
+  ggplot(aes(x = planned_condition, y = total_kcal, fill = planned_condition)) +
+  geom_col(width = 0.6) +
+  geom_text(
+    aes(label = round(total_kcal, 0)),
+    vjust = -0.5,
+    size = 5
+  ) +
+  facet_wrap(~participant) +
+  scale_fill_manual(values = c("Satiated" = "grey70", "Fasted" = "grey30")) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+  labs(
+    x = "Metabolic condition",
+    y = "Total kcal consumed",
+    title = "Individual examples of intake patterns"
+  ) +
+  theme_classic(base_size = 16) +
+  theme(legend.position = "none")
+
+p_individual
+
+# Spaghetti Plot
+p_individual_2 <- dat_main_final |>
+  filter(fastress_id %in% example_ids) |>
+  mutate(
+    participant = recode(fastress_id, !!!example_labels),
+    planned_condition = factor(
+      planned_condition,
+      levels = c("satiated", "fasted"),
+      labels = c("Satiated", "Fasted")
+    )
+  ) |>
+  ggplot(aes(x = planned_condition, y = total_kcal, group = participant)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 4) +
+  geom_text(
+    aes(label = round(total_kcal, 0)),
+    vjust = -1.5,
+    size = 5
+  ) +
+  facet_wrap(~participant) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.2))) +
+  labs(
+    x = "Metabolic condition",
+    y = "Total kcal consumed",
+    title = "Individual examples of intake patterns"
+  ) +
+  theme_classic(base_size = 16)
+
+p_individual_2
+```
+
 # Export
 
 ## Save final outputs
@@ -2437,6 +2513,7 @@ beta_cond / sd_total
 
 dir.create("figures", showWarnings = FALSE)
 
+# Manipulation checks
 ggsave(
   filename = "figures/figure_stress_check.png",
   plot = p_stress_check,
@@ -2449,32 +2526,46 @@ ggsave(
   width = 9, height = 6, dpi = 300, bg = "white"
 )
 
+# Main outcome
 ggsave(
   filename = "figures/figure_total_main.png",
   plot = p_total_main,
   width = 7, height = 5, dpi = 300, bg = "white"
 )
 
+# Forest plot
 ggsave(
   filename = "figures/figure_forest_main.png",
   plot = p_forest_main,
   width = 8, height = 5, dpi = 300, bg = "white"
 )
 
-# optional
+# Secondary outcomes
 ggsave(
   filename = "figures/figure_secondary_outcomes.png",
   plot = p_secondary,
   width = 9, height = 7, dpi = 300, bg = "white"
 )
 
-# optional
+# SRS interaction
 ggsave(
   filename = "figures/figure_srs_interaction.png",
   plot = p_srs_interaction,
   width = 7, height = 5, dpi = 300, bg = "white"
 )
 
+# Individual examples
+ggsave(
+  filename = "figures/figure_individual_examples.png",
+  plot = p_individual,
+  width = 9, height = 5, dpi = 300, bg = "white"
+)
+
+ggsave(
+  filename = "figures/figure_individual_examples_2.png",
+  plot = p_individual_2,
+  width = 9, height = 5, dpi = 300, bg = "white"
+)
 ```
 
 # Package References

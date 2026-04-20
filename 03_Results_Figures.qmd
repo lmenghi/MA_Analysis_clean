@@ -1,0 +1,14 @@
+---
+title: "Fasting and Stress Eating"
+author: "Lisa Menghini"
+date: "2026-04"
+format: pptx
+---
+
+## Stress Manipulation Check
+
+![](file:///Users/lisamenghini/Documents/Uni/Masterarbeit/Data/MA_Analysis/figures/figure_stress_check.png)
+
+## Manipulation Checks
+
+![](file:///Users/lisamenghini/Documents/Uni/Masterarbeit/Data/MA_Analy
