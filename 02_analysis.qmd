@@ -883,8 +883,6 @@ paired_result_row(hunger_check) |>
   autofit()
 ```
 
-Shapiro–Wilk p = **.0263**. -\> distribution was not met -\> Wilcoxon: V = 167, p \< .001
-
 ```{r}
 # ============================================================
 # Figure: Manipulation checks for hunger and blood markers
@@ -1242,6 +1240,18 @@ dat_main_final |>
     .groups = "drop"
   ) |>
   flextable()
+
+dat_main_final |>
+  group_by(planned_condition) |>
+  summarise(
+    high_kcal_M = mean(high_kcal),
+    high_kcal_SD = sd(high_kcal),
+    low_kcal_M = mean(low_kcal),
+    low_kcal_SD = sd(low_kcal),
+    prop_M = mean(prop_high_kcal),
+    prop_SD = sd(prop_high_kcal)
+  )|>
+  flextable()
 ```
 
 # Model specification
@@ -1438,6 +1448,7 @@ extract_main_row <- function(pack, outcome_label) {
   tibble(
     outcome = outcome_label,
     estimate = cond_row$Estimate,
+    se = cond_row$`Std. Error`,       
     conf_low = cond_ci$`2.5 %`,
     conf_high = cond_ci$`97.5 %`,
     chisq = pack$comparison$Chisq[2],
@@ -1466,6 +1477,7 @@ pack_high  <- model_summary_pack(fit_high$m0,  fit_high$m1,  dat_main_final, "hi
 pack_low   <- model_summary_pack(fit_low$m0,   fit_low$m1,   dat_main_final, "low_kcal")
 pack_prop  <- model_summary_pack(fit_prop$m0,  fit_prop$m1,  dat_main_final, "prop_high_kcal")
 
+
 # Kompakte Ergebnistabelle
 tbl_main_results <- bind_rows(
   extract_main_row(pack_total, "Total kcal"),
@@ -1475,14 +1487,16 @@ tbl_main_results <- bind_rows(
 ) |>
   mutate(
     estimate = round(estimate, 2),
+     se = round(se, 2),
     conf_int = sprintf("[%.2f, %.2f]", conf_low, conf_high),
     chisq = round(chisq, 2),
     p_model = ifelse(p_model < .001, "< .001", sprintf("%.3f", p_model))
   ) |>
-  select(outcome, estimate, conf_int, chisq, df, p_model) |>
+  select(outcome, estimate, se, conf_int, chisq, df, p_model) |>
   rename(
     Outcome = outcome,
     `b (fasted)` = estimate,
+    `SE` = se, 
     `95% CI` = conf_int,
     `χ²` = chisq,
     `df` = df,
@@ -1547,10 +1561,6 @@ p_forest_main <- ggplot(forest_main, aes(x = estimate, y = outcome)) +
 
 p_forest_main
 ```
-
-In the fasted condition, it is estimated that approximately 2 kcal more were consumed than in the satiated state -\> practically zero.
-
--\> all p-values are \> .05
 
 ## Session Effects
 
@@ -2097,6 +2107,8 @@ print(model_summary_pack(mods_a$m0, mods_a$m1, dat_main2, "total_kcal")$fixed)
 cat("\nOhne mismatch Sessions:\n")
 print(model_summary_pack(mods_b$m0, mods_b$m1, dat_main_nomismatch, "total_kcal")$fixed)
 
+confint(mods_b$m1, method = "Wald")
+
 ```
 
 Excluding sessions with metabolic mismatches did not materially change the main result.
@@ -2157,6 +2169,7 @@ model_summary_pack(mods_full$m0, mods_full$m1, dat_main_trim, "total_kcal")$fixe
   as.data.frame() |>
   flextable()
 
+confint(mods_trim$m1, method = "Wald")
 
 ```
 
@@ -2168,12 +2181,6 @@ model_summary_pack(mods_trim$m0, mods_trim$m1, dat_main_no_out, "total_kcal")$fi
   flextable()
 
 ```
-
--   **with outlier**: `planned_conditionfasted = 2.03`, **p = .938**
-
--   **without outlier**: `planned_conditionfasted = 9.13`, **p = .738**
-
-The null effect of metabolic condition persisted after excluding extreme high-intake observations, suggesting that the main finding was not driven by outliers.
 
 # Plots and diagnostics
 
