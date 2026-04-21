@@ -1198,87 +1198,64 @@ dat_main_final |>
   slice_head(n = 10)|>
   flextable()
 
-# 8.4 Quick Plots (optional, aber hilfreich)
-dat_main_final |>
+# 8.4 Quick Plots
+p_hist_kcal <- dat_main_final |>
   ggplot(aes(x = total_kcal)) +
   geom_histogram(bins = 20) +
   facet_wrap(~planned_condition) +
   labs(title = "total_kcal Verteilung nach Condition")
+p_hist_kcal
+ggsave("figures/figure_hist_kcal.png", plot = p_hist_kcal, width = 8, height = 5, dpi = 300, bg = "white")
 
-dat_main_final |>
+p_boxplot_kcal <- dat_main_final |>
   ggplot(aes(x = planned_condition, y = total_kcal)) +
   geom_boxplot() +
-  stat_summary(
-    fun = mean,
-    geom = "point",
-    size = 3
-  ) +
-  stat_summary(
-    fun = mean,
-    geom = "crossbar",
-    width = 0.4,
-    linewidth = 0.5
-  ) +
-  labs(
-    title = "Total kcal by metabolic condition",
-    x = "Metabolic condition",
-    y = "Total kcal"
-  ) +
+  stat_summary(fun = mean, geom = "point", size = 3) +
+  stat_summary(fun = mean, geom = "crossbar", width = 0.4, linewidth = 0.5) +
+  labs(title = "Total kcal by metabolic condition", x = "Metabolic condition", y = "Total kcal") +
   theme_main
+p_boxplot_kcal
+ggsave("figures/figure_boxplot_kcal.png", plot = p_boxplot_kcal, width = 6, height = 5, dpi = 300, bg = "white")
 
 # ============================================================
-# Trait measure distributions_centered (restricted range check)
+# Trait distributions (centered)
 # ============================================================
-
-dat_main_final |>
+p_trait_dist_c <- dat_main_final |>
   select(fastress_id, srs_c, stadit_c, cerq_adaptive_c,
          cerq_maladaptive_c, edeq_restraint_c, sses_c) |>
   distinct() |>
   pivot_longer(-fastress_id) |>
   ggplot(aes(x = value)) +
   geom_histogram(bins = 10) +
-  facet_wrap(~ name, scales = "free_x") +
-  labs(
-    title = "Distribution of trait moderators",
-    x = "Value (mean-centred)",
-    y = "Count"
-  ) +
+  facet_wrap(~ name, scales = "free_x", ncol = 2) +
+  labs(title = "Distribution of trait moderators (mean-centred)", x = "Value (mean-centred)", y = "Count") +
   plot_theme
+p_trait_dist_c
+ggsave("figures/figure_trait_dist_centered.png", plot = p_trait_dist_c, width = 8, height = 10, dpi = 300, bg = "white")
 
 # ============================================================
-# Trait measure distributions (restricted range check)
+# Trait distributions (raw)
 # ============================================================
-
 p_trait_dist_raw <- dat_main_final |>
-  select(fastress_id, srs, stadit, cerq_adaptive, 
-         cerq_maladaptive, edeq_restraint, sses) |>
+  select(fastress_id, srs_mean, stadit_trait_anxiety, cerq_adaptive_mean,
+         cerq_maladaptive_mean, edeq_restraint, sses_mean) |>
   distinct() |>
   pivot_longer(-fastress_id) |>
-  mutate(
-    name = recode(name,
-      "srs"              = "Stress reactivity (SRS)",
-      "stadit"           = "Trait anxiety (STADI)",
-      "cerq_adaptive"    = "Adaptive ER (CERQ)",
-      "cerq_maladaptive" = "Maladaptive ER (CERQ)",
-      "edeq_restraint"   = "Restrained eating (EDE-Q)",
-      "sses"             = "Stress-induced eating (SSES)"
-    )
-  ) |>
+  mutate(name = recode(name,
+    "srs_mean"              = "Stress reactivity (SRS)",
+    "stadit_trait_anxiety"  = "Trait anxiety (STADI)",
+    "cerq_adaptive_mean"    = "Adaptive ER (CERQ)",
+    "cerq_maladaptive_mean" = "Maladaptive ER (CERQ)",
+    "edeq_restraint"        = "Restrained eating (EDE-Q)",
+    "sses_mean"             = "Stress-induced eating (SSES)"
+  )) |>
   ggplot(aes(x = value)) +
   geom_histogram(bins = 10, fill = "grey60", color = "white") +
   facet_wrap(~ name, scales = "free_x", ncol = 2) +
-  labs(
-    title = "Distribution of trait moderators (raw scores)",
-    x = "Raw score",
-    y = "Count"
-  ) +
+  labs(title = "Distribution of trait moderators (raw scores)", x = "Raw score", y = "Count") +
   plot_theme
-
 p_trait_dist_raw
-
-ggsave("figures/figure_trait_dist_raw.png", plot = p_trait_dist_raw, 
-       width = 8, height = 10, dpi = 300, bg = "white")
-
+ggsave("figures/figure_trait_dist_raw.png", plot = p_trait_dist_raw, width = 8, height = 10, dpi = 300, bg = "white")
 ```
 
 ## Descriptives
