@@ -37,7 +37,6 @@ format: pptx
 
 ![](file:///Users/lisamenghini/Documents/Uni/Masterarbeit/Data/MA_Analysis/figures/figure_individual_examples_2.png)
 
-
 ## Table 3: Primary Model
 
 ```{r}
@@ -111,3 +110,5 @@ flextable(table5) |>
   hline_bottom(part = "body", border = fp_border(width = 1.5)) |>
   autofit()
 ```
+
+## 

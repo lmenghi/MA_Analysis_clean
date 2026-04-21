@@ -1017,6 +1017,31 @@ dat_main_final |>
   flextable()
 ```
 
+## Standardized variables for beta coefficients
+
+```{r}
+# ============================================================
+# Standardisierte Variablen fuer beta (β)
+# Fuer β werden Outcome und kontinuierlicher Moderator z-standardisiert
+# ============================================================
+
+z_num <- function(x) as.numeric(scale(x))
+
+dat_main_final <- dat_main_final |>
+  mutate(
+    total_kcal_z = z_num(total_kcal),
+    high_kcal_z = z_num(high_kcal),
+
+    srs_z = z_num(srs_c),
+    mri_reactivity_z = z_num(mri_reactivity_c),
+    sses_z = z_num(sses_c),
+    cerq_adaptive_z = z_num(cerq_adaptive_c),
+    cerq_maladaptive_z = z_num(cerq_maladaptive_c),
+    stadit_z = z_num(stadit_c),
+    edeq_restraint_z = z_num(edeq_restraint_c)
+  )
+```
+
 # Moderator samples
 
 ## Moderator-specific datasets
@@ -1200,6 +1225,60 @@ dat_main_final |>
     y = "Total kcal"
   ) +
   theme_main
+
+# ============================================================
+# Trait measure distributions_centered (restricted range check)
+# ============================================================
+
+dat_main_final |>
+  select(fastress_id, srs_c, stadit_c, cerq_adaptive_c,
+         cerq_maladaptive_c, edeq_restraint_c, sses_c) |>
+  distinct() |>
+  pivot_longer(-fastress_id) |>
+  ggplot(aes(x = value)) +
+  geom_histogram(bins = 10) +
+  facet_wrap(~ name, scales = "free_x") +
+  labs(
+    title = "Distribution of trait moderators",
+    x = "Value (mean-centred)",
+    y = "Count"
+  ) +
+  plot_theme
+
+# ============================================================
+# Trait measure distributions (restricted range check)
+# ============================================================
+
+p_trait_dist_raw <- dat_main_final |>
+  select(fastress_id, srs, stadit, cerq_adaptive, 
+         cerq_maladaptive, edeq_restraint, sses) |>
+  distinct() |>
+  pivot_longer(-fastress_id) |>
+  mutate(
+    name = recode(name,
+      "srs"              = "Stress reactivity (SRS)",
+      "stadit"           = "Trait anxiety (STADI)",
+      "cerq_adaptive"    = "Adaptive ER (CERQ)",
+      "cerq_maladaptive" = "Maladaptive ER (CERQ)",
+      "edeq_restraint"   = "Restrained eating (EDE-Q)",
+      "sses"             = "Stress-induced eating (SSES)"
+    )
+  ) |>
+  ggplot(aes(x = value)) +
+  geom_histogram(bins = 10, fill = "grey60", color = "white") +
+  facet_wrap(~ name, scales = "free_x", ncol = 2) +
+  labs(
+    title = "Distribution of trait moderators (raw scores)",
+    x = "Raw score",
+    y = "Count"
+  ) +
+  plot_theme
+
+p_trait_dist_raw
+
+ggsave("figures/figure_trait_dist_raw.png", plot = p_trait_dist_raw, 
+       width = 8, height = 10, dpi = 300, bg = "white")
+
 ```
 
 ## Descriptives
@@ -1684,10 +1763,31 @@ stop_if_no_cases <- function(qc_tbl) {
   }
 }
 
-fit_moderation <- function(dat, outcome, moderator) {
+get_interaction_term <- function(model, moderator_name) {
+  term_names <- names(fixef(model))
+
+  hit <- term_names[
+    stringr::str_detect(
+      term_names,
+      paste0("^planned_condition.*:", moderator_name, "$|^", moderator_name, ":planned_condition")
+    )
+  ]
+
+  if (length(hit) != 1) {
+    stop("Interaktionsterm konnte nicht eindeutig identifiziert werden.")
+  }
+
+  hit
+}
+
+fit_moderation <- function(dat, outcome, moderator,
+                           outcome_z = paste0(outcome, "_z"),
+                           moderator_z = sub("_c$", "_z", moderator)) {
+
   qc_tbl <- qc_mod_sample(dat, outcome = outcome, mod = moderator)
   stop_if_no_cases(qc_tbl)
 
+  # Raw Modelle
   f_add <- as.formula(
     paste0(outcome, " ~ planned_condition + ", moderator, " + (1 | subject)")
   )
@@ -1699,13 +1799,50 @@ fit_moderation <- function(dat, outcome, moderator) {
   m_add <- lmer(f_add, data = dat, REML = FALSE)
   m_int <- lmer(f_int, data = dat, REML = FALSE)
 
+  # Standardisiertes Interaktionsmodell fuer beta (β)
+  f_int_std <- as.formula(
+    paste0(outcome_z, " ~ planned_condition * ", moderator_z, " + (1 | subject)")
+  )
+
+  m_int_std <- lmer(f_int_std, data = dat, REML = FALSE)
+
+  int_term_raw <- get_interaction_term(m_int, moderator)
+  int_term_std <- get_interaction_term(m_int_std, moderator_z)
+
   list(
     qc = qc_tbl,
     add = m_add,
     int = m_int,
+    int_std = m_int_std,
     anova = anova(m_add, m_int),
     fixed = summary(m_int)$coefficients,
-    ci = confint(m_int, method = "Wald")
+    ci = confint(m_int, method = "Wald"),
+    int_term_raw = int_term_raw,
+    int_term_std = int_term_std,
+    beta_std = fixef(m_int_std)[int_term_std]
+  )
+}
+
+extract_moderation_interaction_row <- function(res, moderator_label) {
+
+  fixed <- as.data.frame(res$fixed) |>
+    tibble::rownames_to_column("term")
+
+  ci <- as.data.frame(res$ci) |>
+    tibble::rownames_to_column("term")
+
+  row_raw <- fixed |>
+    filter(term == res$int_term_raw)
+
+  row_ci <- ci |>
+    filter(term == res$int_term_raw)
+
+  tibble(
+    Moderator = moderator_label,
+    b = round(row_raw$Estimate, 2),
+    beta = round(unname(res$beta_std), 2),
+    conf_int = sprintf("[%.2f, %.2f]", row_ci$`2.5 %`, row_ci$`97.5 %`),
+    p = ifelse(row_raw$`Pr(>|t|)` < .001, "< .001", sprintf("%.3f", row_raw$`Pr(>|t|)`))
   )
 }
 
@@ -1745,7 +1882,7 @@ as.data.frame(srs_res$anova) |> flextable()
 
 ```
 
-m_srs_add -\> The interaction model does not fit significantly better than the additive model. (p \> .518
+m_srs_add -\> The interaction model does not fit significantly better than the additive model.
 
 #### Interaction model estimates
 
@@ -1753,15 +1890,7 @@ m_srs_add -\> The interaction model does not fit significantly better than the a
 model_fixed_table(srs_res$int)
 ```
 
-Intercept -\> A person with an average SRS is estimated to consume approximately 372.6 kcal when satiated.
-
-planned_conditionfasted = 2.028 -\> With average stress reactivity, it was estimated that approximately 2 kcal more were consumed in the fasted state than in the satiated state. =\> not significant p \> .937
-
-**H2a:** srs_c -\> If srs_c increases by 1 unit, total_kcal is estimated to change by approximately -73.17 kcal in the satiated condition.
-
-**H2b:** planned_conditionfasted:srs_c -\> For every additional unit of SRS, the difference between the fasted and satiated states is estimated to be 48.45 kcal lower. This does not suggest a stronger positive correlation in the fasted state
-
-#### Addition Analysis: MRI subjective stress reactivity
+## Additional Analysis: MRI subjective stress reactivity
 
 ```{r}
 # ------------------------------------------------------------
@@ -1780,6 +1909,8 @@ mri_res <- fit_moderation(
 mri_res$qc |> flextable()
 as.data.frame(mri_res$anova) |> flextable()
 model_fixed_table(mri_res$int)
+
+
 ```
 
 ### Moderation 2: CERQ
@@ -1812,7 +1943,7 @@ as.data.frame(cerq_adapt_res$anova) |> flextable()
 
 ```
 
-m_cerq_adapt_add -\> There is no evidence that adaptive CERQ moderates the condition effect. p = .523
+m_cerq_adapt_add -\> There is no evidence that adaptive CERQ moderates the condition effect.
 
 #### Interaction model estimates
 
@@ -1994,6 +2125,32 @@ H5 was not supported for restrained eating: EDE-Q restraint was neither signific
 -\> but: With increasing restraint in eating, the difference between fasted and satiated states becomes slightly more positive in numerical terms.
 
 H5 was also not supported for stress eating tendencies: SSES showed neither a significant main effect on total caloric intake nor a significant interaction with metabolic condition.
+
+## Overview all Moderations
+
+```{r}
+tbl_moderation <- bind_rows(
+  extract_moderation_interaction_row(srs_res,        "Stress reactivity (SRS)"),
+  extract_moderation_interaction_row(mri_res,        "Stress reactivity (MRI-task)"),
+  extract_moderation_interaction_row(cerq_adapt_res, "Adaptive ER (CERQ)"),
+  extract_moderation_interaction_row(cerq_mal_res,   "Maladaptive ER (CERQ)"),
+  extract_moderation_interaction_row(stadit_res,     "Trait anxiety (STADI)"),
+  extract_moderation_interaction_row(edeq_res,       "Restrained eating (EDE-Q)"),
+  extract_moderation_interaction_row(sses_res,       "Stress-induced eating (SSES)")
+) |>
+  rename(
+    Moderator = Moderator,
+    `b` = b,
+    `β` = beta,
+    `95% CI` = conf_int,
+    `p` = p
+  )
+
+tbl_moderation |>
+  flextable() |>
+  theme_booktabs() |>
+  autofit()
+```
 
 ## Store models
 
