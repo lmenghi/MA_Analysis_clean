@@ -110,3 +110,5 @@ flextable(table5) |>
   hline_bottom(part = "body", border = fp_border(width = 1.5)) |>
   autofit()
 ```
+
+## 
